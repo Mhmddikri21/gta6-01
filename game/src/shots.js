@@ -1,79 +1,101 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// OPAL COAST — screenshot staging. One clear job: given ?shot=N in the URL,
+// place the player, cars, police and mission into a real playable game state
+// so a headless browser can capture a true render of the game (never a fake
+// image). The staged states are all reachable by playing.
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+// Put the chase camera exactly where the frame loop would settle it, so the
+// very first rendered frame already shows the player and the action.
+function snapCamera(game) {
+  const p = game.player;
+  const dist = p.onFoot ? 7.5 : 11;
+  const height = p.onFoot ? 3.4 : 4.6;
+  const back = { x: Math.sin(p.angle), z: Math.cos(p.angle) };
+  game.camera.position.set(p.x - back.x * dist, height, p.z - back.z * dist);
+  game.camera.lookAt(p.x + back.x * 6, p.onFoot ? 1.6 : 1.4, p.z + back.z * 6);
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
+function applyShot(game, shot) {
+  const p = game.player;
+  if (shot === 1) {
+    // COVER: sunset chase on the coastal boulevard — 4 stars, police closing
+    // in from the sides, Air One above, the Union tanker ahead.
+    startMission(game.missions, game);
+    game.missions.index = 1;
+    startMission(game.missions, game);
+    addHeat(game.police, 62);
+    const car = game.trafficCars[0];
+    enterCar(p, car, game.scene);
+    car.position.set(168, 0, 60);
+    car.userData.angle = Math.PI; car.userData.speed = 30;
+    car.userData.type = 'coupe';
+    car.userData.bodyMat.color.setHex(0xf97316);
+    p.x = 168; p.z = 60; p.angle = Math.PI;
+    game.missions.targetCar.position.set(168, 0, 22);
+    game.missions.targetCar.userData.angle = Math.PI;
+    game.missions.targetCar.userData.speed = 14;
+    // OCPD interceptors flanking the player, in frame ahead of the camera.
+    for (let i = 0; i < 2; i++) {
+      const pc = spawnPoliceCar(game.scene, p, Math.random);
+      pc.position.set(152 + i * 30, 0, 30 - i * 8);
+      pc.userData.angle = Math.PI;
+      game.police.cars.push(pc);
     }
+    // Air One hovering ahead-left, low enough to stay in frame.
+    const heli = makeHelicopter();
+    heli.position.set(148, 25, 12);
+    game.scene.add(heli);
+    game.police.heli = heli;
+    game.timeOfDay = 17.6;
+    snapCamera(game);
   }
-  return best;
-}
-
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+  if (shot === 2) {
+    // On foot on the marina boardwalk at dusk, filters ahead, traffic and
+    // pedestrians around, open sky to the east.
+    game.missions.index = 4;
+    startMission(game.missions, game);
+    // On the boulevard itself, clear of the building row, facing the marina.
+    p.x = 168; p.z = -92; p.angle = Math.PI;
+    p.mesh.position.set(p.x, 0, p.z);
+    p.health = 82; p.armour = 55; p.cash = 6420;
+    game.timeOfDay = 17.9;
+    snapCamera(game);
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
+  if (shot === 3) {
+    // Coastal highway race: checkpoints ahead, rival beside the player.
+    game.missions.index = 5;
+    startMission(game.missions, game);
+    const car = game.trafficCars[1] || game.trafficCars[0];
+    enterCar(p, car, game.scene);
+    car.position.set(160, 0, 148);
+    car.userData.angle = Math.PI; car.userData.speed = 26;
+    car.userData.type = 'muscle';
+    car.userData.bodyMat.color.setHex(0xf97316);
+    p.x = 160; p.z = 148; p.angle = Math.PI;
+    game.missions.stage = 1;
+    game.timeOfDay = 16.8;
+    snapCamera(game);
   }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  if (shot === 4) {
+    // Pier shootout at dusk: on foot on the sand, pistol out, police cars
+    // and Air One closing in, the pier and the ocean ahead.
+    game.missions.index = 2;
+    startMission(game.missions, game);
+    p.x = 168; p.z = -28; p.angle = Math.PI / 2;
+    p.mesh.position.set(p.x, 0, p.z);
+    p.weaponIndex = 1; p.health = 72; p.armour = 40; p.cash = 18450;
+    addHeat(game.police, 45);
+    for (let i = 0; i < 2; i++) {
+      const pc = spawnPoliceCar(game.scene, p, Math.random);
+      pc.position.set(182 + i * 8, 0, -44 + i * 22);
+      pc.userData.angle = 2.6;
+      game.police.cars.push(pc);
+    }
+    const heli = makeHelicopter();
+    heli.position.set(185, 32, -55);
+    game.scene.add(heli);
+    game.police.heli = heli;
+    game.timeOfDay = 18.2;
+    snapCamera(game);
+  }
+  updateHud(game, 0);
 }
