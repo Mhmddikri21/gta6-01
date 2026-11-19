@@ -14,6 +14,7 @@ const OPAL = {
   EAST_BEACH: 175,       // x beyond this is sand, then water
   WORLD_R: 210,          // playable radius, soft-clamped
   SEA_LEVEL: 0.4,
+  GARAGE: { x: -20, z: -20 }, // Juno's garage: safehouse, repair, respawn
   SUNSET: { skyTop: 0x2e4a7a, skyMid: 0xf2a35e, skyLow: 0xffd9a0, fog: 0xf7b06a, sun: 0xffd27a },
   DAY:   { skyTop: 0x3f8fd2, skyMid: 0x9fd8ef, skyLow: 0xffe9b0, fog: 0xcfe8f2, sun: 0xfff2c0 },
 };
