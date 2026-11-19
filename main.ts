@@ -4,7 +4,7 @@
 // from vendor/makefun-game.ts. Standard library only; runs twice and must
 // write the same bytes both times, so it copies files in a fixed order and
 // never writes timestamps or random data into the output.
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -15,8 +15,13 @@ const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
 function handInGame(): void {
   // Start from a clean output directory so a second run cannot leave stale
   // files behind and change the bytes between the grader's two runs.
-  rmSync(outDir, { recursive: true, force: true });
+  // Clear the directory's contents instead of removing the directory
+  // itself: the grader hands in a mounted /output, and removing a mount
+  // point fails with EBUSY (Device or resource busy) and exits 1.
   mkdirSync(outDir, { recursive: true });
+  for (const entry of readdirSync(outDir)) {
+    rmSync(join(outDir, entry), { recursive: true, force: true });
+  }
   const gameDir = join(repoRoot, 'game');
   const shotsDir = join(repoRoot, 'screenshots');
   if (!existsSync(gameDir)) throw new Error('OPAL COAST: game/ is missing from the repository');
