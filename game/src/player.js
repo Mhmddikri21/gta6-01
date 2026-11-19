@@ -88,7 +88,10 @@ function driveCar(player, car, dt, input, colliders, trafficCars, onCrash) {
 
 function walkPlayer(player, dt, input, colliders) {
   const run = input.run && player.runStamina > 0;
-  const spd = run ? 9.5 : 5.2;
+  let spd = run ? 9.5 : 5.2;
+  // Hurt and limping: under 30 health the player moves at 70% speed, which
+  // makes a shootout escape feel different from a healthy sprint.
+  if (player.health < 30) spd *= 0.7;
   if (run) player.runStamina = Math.max(0, player.runStamina - dt * 18);
   else player.runStamina = Math.min(100, player.runStamina + dt * 12);
   let mx = 0, mz = 0;
