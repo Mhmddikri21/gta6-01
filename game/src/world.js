@@ -126,6 +126,30 @@ function buildWorld(scene, rng) {
     }
   }
 
+  // Juno's garage: the safehouse. A low violet-roofed workshop at OPAL.GARAGE,
+  // where busted and wasted players respawn and where cars get repaired.
+  const garage = new THREE.Group();
+  const gBase = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 10),
+    new THREE.MeshLambertMaterial({ color: 0xd8d3c8 }));
+  gBase.position.y = 2.5; gBase.castShadow = true; gBase.receiveShadow = true;
+  garage.add(gBase);
+  const gRoof = new THREE.Mesh(new THREE.BoxGeometry(15, 0.8, 11),
+    new THREE.MeshLambertMaterial({ color: 0x7c3aed }));
+  gRoof.position.y = 5.4; gRoof.castShadow = true;
+  garage.add(gRoof);
+  const gDoor = new THREE.Mesh(new THREE.BoxGeometry(8, 3.6, 0.3),
+    new THREE.MeshLambertMaterial({ color: 0x334155 }));
+  gDoor.position.set(0, 1.8, 5.05);
+  garage.add(gDoor);
+  const gSign = new THREE.Mesh(new THREE.BoxGeometry(6, 1.2, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+  gSign.position.set(0, 6.4, 5.05);
+  garage.add(gSign);
+  garage.position.set(OPAL.GARAGE.x, 0, OPAL.GARAGE.z);
+  scene.add(garage);
+  world.garage = garage;
+  world.colliders.push({ x: OPAL.GARAGE.x, z: OPAL.GARAGE.z, r: 8 });
+
   // Palms along the boulevard and the pier.
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8a6a4a });
   const leafMat = new THREE.MeshLambertMaterial({ color: 0x2fae6e, flatShading: true });
