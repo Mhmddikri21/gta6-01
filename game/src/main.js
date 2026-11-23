@@ -1,6 +1,7 @@
-// OPAL COAST — boot and game loop. One clear job: wire every system
-// together (world, player, traffic, police, missions, HUD, audio), run the
-// frame loop, read input, and keep a self-test record for local checks.
+// OPAL COAST — boot and game loop.
+// One job: wire every system together (world, player, traffic, police,
+// missions, HUD, audio), run the frame loop, read input, and keep a
+// self-test record for local checks.
 
 function bootOpalCoast() {
   const params = new URLSearchParams(location.search);
@@ -27,6 +28,7 @@ function bootOpalCoast() {
   const audio = createAudio();
   const police = createPolice(scene);
   const missions = createMissions(scene);
+  const collectibles = createCollectibles(scene, rng);
 
   const trafficCars = [];
   for (let i = 0; i < 14; i++) trafficCars.push(spawnTrafficCar(scene, rng, player));
@@ -35,44 +37,15 @@ function bootOpalCoast() {
 
   const game = {
     scene, camera, renderer, world, player, audio, police, missions,
-    trafficCars, pedestrians, timeOfDay: 17.4, paused: false, started: false,
-    frames: 0, errors: [], startTime: performance.now(),
+    collectibles, trafficCars, pedestrians, timeOfDay: 17.4, paused: false, started: false,
+    frames: 0, errors: [], startTime: performance.now(), rng, selftest,
     hud: null, input: { up: false, down: false, left: false, right: false, run: false, handbrake: false },
   };
   game.save = function () { saveGame(game); };
   game.hud = createHud(game);
 
   window.addEventListener('error', function (e) { game.errors.push(String(e.message || e.error)); });
-
-  // ---- Input ----
-  const keyMap = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', ShiftLeft: 'run', ShiftRight: 'run', Space: 'handbrake' };
-  window.addEventListener('keydown', function (e) {
-    audio.ensure();
-    if (keyMap[e.code] !== undefined) { game.input[keyMap[e.code]] = true; e.preventDefault(); }
-    if (e.code === 'KeyE') toggleCar(game);
-    if (e.code === 'KeyM') toggleMission(game);
-    if (e.code === 'KeyR') { audio.ensure(); audio.startRadio((audio.radioIndex + 1) % RADIO.length); }
-    if (e.code === 'KeyF') punch(game);
-    if (e.code === 'Digit1') player.weaponIndex = 0;
-    if (e.code === 'Digit2') player.weaponIndex = 1;
-    if (e.code === 'Digit3' && player.rp >= 700) player.weaponIndex = 2;
-    if (e.code === 'Digit4' && player.rp >= 1500) player.weaponIndex = 3;
-    if (e.code === 'Escape') togglePause(game);
-    if (e.code === 'KeyP') { saveGame(game); showBanner(game.missions, 'SAVED', 'Progress saved to this browser.'); }
-  });
-  window.addEventListener('keyup', function (e) {
-    if (keyMap[e.code] !== undefined) game.input[keyMap[e.code]] = false;
-  });
-  window.addEventListener('mousedown', function (e) {
-    if (!game.started || game.paused) return;
-    audio.ensure();
-    shoot(game, e.clientX, e.clientY);
-  });
-  window.addEventListener('resize', function () {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  bindInput(game);
 
   // ---- Start screen ----
   const startBtn = document.getElementById('start-btn');
@@ -112,62 +85,114 @@ function bootOpalCoast() {
     dt = Math.min(dt, 0.05);
     last = now;
     if (!game.started || game.paused) { renderer.render(scene, camera); return; }
-    game.frames += 1;
-    game.timeOfDay += dt * 0.004;
-    if (game.timeOfDay > 19.2) game.timeOfDay = 16.5;
-
-    // Player.
-    if (player.onFoot) walkPlayer(player, dt, game.input, world.colliders);
-    else {
-      const spd = driveCar(player, player.car, dt, game.input, world.colliders, trafficCars, function (v) {
-        audio.crash(); addHeat(police, 4);
-        if (player.car.userData.hp === undefined) player.car.userData.hp = 100;
-        player.car.userData.hp -= v * 0.4;
-      });
-      audio.engine(Math.min(1, spd / 40));
-      if (player.car.userData.hp !== undefined && player.car.userData.hp <= 0) {
-        showBanner(missions, 'CAR WRECKED', 'Your ride is scrap. Find another one.');
-        addHeat(police, 6);
-        exitCar(player, scene);
-      }
-    }
-    // Traffic + pedestrians.
-    for (const c of trafficCars) updateTrafficCar(c, dt, world.colliders, player.car);
-    for (const ped of pedestrians) {
-      updatePedestrian(ped, dt, player, player.onFoot ? player.speed : Math.abs((player.car && player.car.userData.speed) || 0));
-      // Bumping a pedestrian on foot or by car is a crime.
-      const d = Math.hypot(ped.position.x - player.x, ped.position.z - player.z);
-      if (d < 1.6 && !player.onFoot && Math.abs(player.car.userData.speed) > 6) {
-        ped.userData.flee = 3;
-        addHeat(police, 8);
-      }
-    }
-    // Police + missions.
-    updatePolice(police, scene, dt, player, rng, function () { busted(game); });
-    audio.siren(police.wanted > 0);
-    updateMissions(missions, game, dt);
-    // Camera + HUD.
-    updateCamera(camera, player, dt);
-    updateHud(game, dt);
-    // Ocean shimmer.
-    world.ocean.position.y = OPAL.SEA_LEVEL + Math.sin(now * 0.0006) * 0.15;
-    // Wasted.
-    if (player.dead) wasted(game);
-    // Self-test record (30 frames is enough to prove the loop, the HUD and
-    // the systems all run; software rendering here is ~1 fps).
-    if (selftest && game.frames === 30) {
-      const div = document.getElementById('selftest');
-      const ok = game.errors.length === 0 && game.frames > 0;
-      if (div) div.textContent = (ok ? 'SELFTEST OK' : 'SELFTEST FAIL: ' + game.errors.join(';')) +
-        ' frames=' + game.frames + ' traffic=' + trafficCars.length + ' peds=' + pedestrians.length +
-        ' wanted=' + police.wanted + ' mission=' + (missions.active ? MISSIONS[missions.index].id : 'none');
-      document.title = div ? div.textContent : 'SELFTEST';
-    }
+    stepGame(game, dt, now);
     renderer.render(scene, camera);
   }
   if (shot > 0) applyShot(game, shot);
   requestAnimationFrame(frame);
   return game;
+}
+
+// All keyboard / mouse / resize wiring in one place.
+function bindInput(game) {
+  const player = game.player;
+  const audio = game.audio;
+  const keyMap = {
+    KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down',
+    KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
+    ShiftLeft: 'run', ShiftRight: 'run', Space: 'handbrake',
+  };
+  window.addEventListener('keydown', function (e) {
+    audio.ensure();
+    if (keyMap[e.code] !== undefined) { game.input[keyMap[e.code]] = true; e.preventDefault(); }
+    if (e.code === 'KeyE') toggleCar(game);
+    if (e.code === 'KeyM') toggleMission(game);
+    if (e.code === 'KeyR') { audio.ensure(); audio.startRadio((audio.radioIndex + 1) % RADIO.length); }
+    if (e.code === 'KeyF') punch(game);
+    if (e.code === 'Digit1') player.weaponIndex = 0;
+    if (e.code === 'Digit2') player.weaponIndex = 1;
+    if (e.code === 'Digit3' && player.rp >= 700) player.weaponIndex = 2;
+    if (e.code === 'Digit4' && player.rp >= 1500) player.weaponIndex = 3;
+    if (e.code === 'Escape') togglePause(game);
+    if (e.code === 'KeyG') repairAtGarage(game.collectibles, game);
+    if (e.code === 'KeyH') togglePhotoMode(game);
+    if (e.code === 'KeyP') { saveGame(game); showBanner(game.missions, 'SAVED', 'Progress saved to this browser.'); }
+  });
+  window.addEventListener('keyup', function (e) {
+    if (keyMap[e.code] !== undefined) game.input[keyMap[e.code]] = false;
+  });
+  window.addEventListener('mousedown', function (e) {
+    if (!game.started || game.paused) return;
+    audio.ensure();
+    shoot(game, e.clientX, e.clientY);
+  });
+  window.addEventListener('resize', function () {
+    game.camera.aspect = window.innerWidth / window.innerHeight;
+    game.camera.updateProjectionMatrix();
+    game.renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// One frame of gameplay: advance the clock, move everything, then update
+// the camera and the HUD. Called only while the game runs.
+function stepGame(game, dt, now) {
+  const player = game.player;
+  const police = game.police;
+  const missions = game.missions;
+  const world = game.world;
+  const audio = game.audio;
+  game.frames += 1;
+  game.timeOfDay += dt * 0.004;
+  if (game.timeOfDay > 19.2) game.timeOfDay = 16.5;
+
+  // Player: on foot or behind the wheel.
+  if (player.onFoot) walkPlayer(player, dt, game.input, world.colliders);
+  else {
+    const spd = driveCar(player, player.car, dt, game.input, world.colliders, game.trafficCars, function (v) {
+      audio.crash();
+      addHeat(police, 4);
+      if (player.car.userData.hp === undefined) player.car.userData.hp = 100;
+      player.car.userData.hp -= v * 0.4;
+    });
+    audio.engine(Math.min(1, spd / 40));
+    if (player.car.userData.hp !== undefined && player.car.userData.hp <= 0) {
+      showBanner(missions, 'CAR WRECKED', 'Your ride is scrap. Find another one.');
+      addHeat(police, 6);
+      exitCar(player, game.scene);
+    }
+  }
+  // Traffic and pedestrians.
+  for (const c of game.trafficCars) updateTrafficCar(c, dt, world.colliders, player.car);
+  for (const ped of game.pedestrians) {
+    updatePedestrian(ped, dt, player, player.onFoot ? player.speed : Math.abs((player.car && player.car.userData.speed) || 0));
+    // Bumping a pedestrian by car is a crime.
+    const d = Math.hypot(ped.position.x - player.x, ped.position.z - player.z);
+    if (d < 1.6 && !player.onFoot && Math.abs(player.car.userData.speed) > 6) {
+      ped.userData.flee = 3;
+      addHeat(police, 8);
+    }
+  }
+  // Police, missions and side systems.
+  updatePolice(police, game.scene, dt, player, game.rng, function () { busted(game); });
+  audio.siren(police.wanted > 0);
+  updateMissions(missions, game, dt);
+  updateCollectibles(game.collectibles, game, dt);
+  // Camera, HUD, ocean shimmer.
+  updateCamera(game.camera, player, dt);
+  updateHud(game, dt);
+  world.ocean.position.y = OPAL.SEA_LEVEL + Math.sin(now * 0.0006) * 0.15;
+  // Wasted.
+  if (player.dead) wasted(game);
+  // Self-test record (30 frames is enough to prove the loop, the HUD and
+  // the systems all run; software rendering here is ~1 fps).
+  if (game.selftest && game.frames === 30) {
+    const div = document.getElementById('selftest');
+    const ok = game.errors.length === 0 && game.frames > 0;
+    if (div) div.textContent = (ok ? 'SELFTEST OK' : 'SELFTEST FAIL: ' + game.errors.join(';')) +
+      ' frames=' + game.frames + ' traffic=' + game.trafficCars.length + ' peds=' + game.pedestrians.length +
+      ' wanted=' + police.wanted + ' mission=' + (missions.active ? MISSIONS[missions.index].id : 'none');
+    document.title = div ? div.textContent : 'SELFTEST';
+  }
 }
 
 function toggleCar(game) {
@@ -217,7 +242,8 @@ function shoot(game, clientX, clientY) {
   if (p.weaponIndex > 0) p.ammo[p.weaponIndex] -= 1;
   game.audio.shot();
   addHeat(game.police, 7);
-  // Hitscan toward the click point: find the nearest ped/police in the aim cone.
+  // Hitscan toward the click point: find the nearest ped or police car in
+  // the aim cone.
   const w = WEAPONS[p.weaponIndex];
   const aim = Math.atan2(clientX - window.innerWidth / 2, window.innerHeight / 2 - clientY);
   const aimAngle = p.angle + aim * 0.6;
@@ -243,7 +269,8 @@ function busted(game) {
   const p = game.player;
   showBanner(game.missions, 'BUSTED', 'The OCPD took you in. $300 bail, and the heat is off — this time.');
   p.cash = Math.max(0, p.cash - 300);
-  game.police.heat = 0; game.police.cooldown = 0;
+  game.police.heat = 0;
+  game.police.cooldown = 0;
   for (const c of game.police.cars) game.scene.remove(c);
   game.police.cars = [];
   p.bustedTimer = 0;
@@ -257,7 +284,9 @@ function wasted(game) {
   const p = game.player;
   showBanner(game.missions, 'WASTED', 'You flatlined on the asphalt. The hospital patched you up — $200.');
   p.cash = Math.max(0, p.cash - 200);
-  p.health = 100; p.armour = 0; p.dead = false;
+  p.health = 100;
+  p.armour = 0;
+  p.dead = false;
   game.police.heat = Math.max(0, game.police.heat - 20);
   if (!p.onFoot) exitCar(p, game.scene);
   p.x = 0; p.z = 8;

@@ -1,6 +1,7 @@
-// OPAL COAST — wanted system and police response. One clear job: turn
-// crimes into stars, stars into pursuing police cars, a helicopter and
-// roadblocks, and let the heat cool when the player breaks line of sight.
+// OPAL COAST — wanted system and police response.
+// One job: turn crimes into stars, stars into pursuing police cars, a
+// helicopter and roadblocks, and let the heat cool when the player breaks
+// line of sight.
 
 function createPolice(scene) {
   return {
@@ -39,6 +40,29 @@ function spawnPoliceCar(scene, playerPos, rng) {
   return car;
 }
 
+// Steer an angle toward a target angle, limited to maxTurn radians per
+// second, taking the shortest way around the circle.
+function steerToward(angle, want, dt, maxTurn) {
+  let da = want - angle;
+  while (da > Math.PI) da -= Math.PI * 2;
+  while (da < -Math.PI) da += Math.PI * 2;
+  return angle + Math.max(-maxTurn * dt, Math.min(maxTurn * dt, da * 2.2));
+}
+
+// Ease a speed toward a target speed.
+function easeSpeed(speed, target, dt, rate) {
+  return speed + (target - speed) * Math.min(1, dt * rate);
+}
+
+// How far the nearest pursuit car is from the player (1e9 when none).
+function nearestPursuit(police, player) {
+  let nearest = 1e9;
+  for (const car of police.cars) {
+    nearest = Math.min(nearest, Math.hypot(car.position.x - player.x, car.position.z - player.z));
+  }
+  return nearest;
+}
+
 function updatePolice(police, scene, dt, player, rng, onBusted) {
   const stars = wantedStars(police);
   police.wanted = stars;
@@ -72,25 +96,22 @@ function updatePolice(police, scene, dt, player, rng, onBusted) {
     h.userData.spot.target.position.set(player.x - h.position.x, -h.position.y, player.z - h.position.z);
   }
   police.sirenPhase += dt * 6;
-  // Chase: steer toward the player, ram, and slow when close.
+  // Chase: steer toward the player, ram, and slow down when close.
+  const spec = CAR_TYPES.find(c => c.id === 'police');
   for (const car of police.cars) {
     const dx = player.x - car.position.x, dz = player.z - car.position.z;
     const dist = Math.hypot(dx, dz);
-    const wantAngle = Math.atan2(dx, dz);
-    let da = wantAngle - car.userData.angle;
-    while (da > Math.PI) da -= Math.PI * 2;
-    while (da < -Math.PI) da += Math.PI * 2;
-    car.userData.angle += Math.max(-2.4 * dt, Math.min(2.4 * dt, da * 2.2));
-    const spec = CAR_TYPES.find(c => c.id === 'police');
+    car.userData.angle = steerToward(car.userData.angle, Math.atan2(dx, dz), dt, 2.4);
     const target = dist > 8 ? spec.top : spec.top * 0.4;
-    car.userData.speed += (target - car.userData.speed) * Math.min(1, dt * 1.4);
+    car.userData.speed = easeSpeed(car.userData.speed, target, dt, 1.4);
     car.position.x += Math.sin(car.userData.angle) * car.userData.speed * dt;
     car.position.z += Math.cos(car.userData.angle) * car.userData.speed * dt;
     car.rotation.y = -car.userData.angle + Math.PI / 2;
     if (car.userData.lightbar) {
       car.userData.lightbar.material.color.setHex(Math.sin(police.sirenPhase) > 0 ? 0xef4444 : 0x3b82f6);
     }
-    // Ramming the player's car damages it; touching the player on foot busts.
+    // Ramming the player's car damages it; touching the player on foot
+    // starts the busted timer.
     if (dist < 3.4) {
       if (!player.onFoot && player.car) {
         player.car.userData.speed *= 0.75;
@@ -104,11 +125,9 @@ function updatePolice(police, scene, dt, player, rng, onBusted) {
       player.bustedTimer = Math.max(0, player.bustedTimer - dt);
     }
   }
-  // Heat cools only while no police car is close (broken line of sight).
-  let nearest = 1e9;
-  for (const car of police.cars) {
-    nearest = Math.min(nearest, Math.hypot(car.position.x - player.x, car.position.z - player.z));
-  }
+  // Heat cools only while no police car is close (broken line of sight):
+  // hide for 9 seconds, then the stars start falling.
+  const nearest = nearestPursuit(police, player);
   if (stars > 0 && nearest > 42 && (!police.heli || stars < 3)) {
     police.cooldown += dt;
     if (police.cooldown > 9) {

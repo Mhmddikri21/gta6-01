@@ -1,6 +1,7 @@
-// OPAL COAST — traffic and pedestrians. One clear job: keep the city alive
-// with cars that follow the road grid and people who walk the sidewalks,
-// both of which the player can interact with (steal, bump, scare).
+// OPAL COAST — traffic and pedestrians.
+// One job: keep the city alive with cars that follow the road grid and
+// people who walk the sidewalks, both of which the player can interact
+// with (steal, bump, scare).
 
 function roadCoord(rng) {
   const i = Math.floor(rng() * (OPAL.GRID + 1));
@@ -14,9 +15,16 @@ function spawnTrafficCar(scene, rng, excludeNear) {
   const vertical = rng() < 0.5;
   const lane = (rng() < 0.5 ? 2.6 : -2.6);
   let x, z, angle;
-  if (vertical) { x = roadCoord(rng) + lane; z = -190 + rng() * 380; angle = rng() < 0.5 ? 0 : Math.PI; }
-  else { z = roadCoord(rng) + lane; x = -190 + rng() * 340; angle = rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2; }
-  if (excludeNear && Math.hypot(x - excludeNear.x, z - excludeNear.z) < 25) { x += 60; }
+  if (vertical) {
+    x = roadCoord(rng) + lane;
+    z = -190 + rng() * 380;
+    angle = rng() < 0.5 ? 0 : Math.PI;
+  } else {
+    z = roadCoord(rng) + lane;
+    x = -190 + rng() * 340;
+    angle = rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
+  }
+  if (excludeNear && Math.hypot(x - excludeNear.x, z - excludeNear.z) < 25) x += 60;
   car.position.set(x, 0, z);
   car.userData.angle = angle;
   car.userData.speed = 7 + rng() * 6;
@@ -31,18 +39,26 @@ function spawnTrafficCar(scene, rng, excludeNear) {
 function updateTrafficCar(car, dt, colliders, playerCar) {
   if (car.userData.driven) return;
   const v = car.userData.vertical;
-  const dir = v ? (car.userData.angle === 0 ? 1 : -1) : (car.userData.angle === Math.PI / 2 ? 1 : -1);
-  // Slow for the car ahead on the same lane.
-  let speed = car.userData.cruise;
+  const dir = v
+    ? (car.userData.angle === 0 ? 1 : -1)
+    : (car.userData.angle === Math.PI / 2 ? 1 : -1);
+  // Ease toward cruise speed, then roll along the road.
+  const speed = car.userData.cruise;
   car.userData.speed += (speed - car.userData.speed) * Math.min(1, dt * 1.5);
   const step = car.userData.speed * dt * dir;
-  if (v) car.position.z += step; else car.position.x += step;
+  if (v) car.position.z += step;
+  else car.position.x += step;
   // Wrap around the city edge onto another road.
   if (car.position.z > 205 || car.position.z < -205 || car.position.x > OPAL.EAST_BEACH + 30 || car.position.x < -205) {
     const rng = Math.random;
     const lane = (rng() < 0.5 ? 2.6 : -2.6);
-    if (v) { car.position.z = dir > 0 ? -200 : 200; car.position.x = roadCoord(rng) + lane; }
-    else { car.position.x = dir > 0 ? -200 : OPAL.EAST_BEACH + 20; car.position.z = roadCoord(rng) + lane; }
+    if (v) {
+      car.position.z = dir > 0 ? -200 : 200;
+      car.position.x = roadCoord(rng) + lane;
+    } else {
+      car.position.x = dir > 0 ? -200 : OPAL.EAST_BEACH + 20;
+      car.position.z = roadCoord(rng) + lane;
+    }
   }
   car.rotation.y = -car.userData.angle + Math.PI / 2;
 }
@@ -52,8 +68,13 @@ function spawnPedestrian(scene, rng, playerPos) {
   const ped = makePedestrian(shirts[Math.floor(rng() * shirts.length)]);
   const vertical = rng() < 0.5;
   let x, z;
-  if (vertical) { x = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5); z = -190 + rng() * 380; }
-  else { z = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5); x = -190 + rng() * 340; }
+  if (vertical) {
+    x = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5);
+    z = -190 + rng() * 380;
+  } else {
+    z = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5);
+    x = -190 + rng() * 340;
+  }
   if (playerPos && Math.hypot(x - playerPos.x, z - playerPos.z) < 12) x += 30;
   ped.position.set(x, 0, z);
   ped.userData = ped.userData || {};
@@ -77,7 +98,8 @@ function updatePedestrian(ped, dt, playerPos, playerSpeed) {
     ped.userData.angle = Math.atan2(dx, dz);
   } else {
     const step = ped.userData.speed * dt * ped.userData.dir;
-    if (ped.userData.vertical) ped.position.z += step; else ped.position.x += step;
+    if (ped.userData.vertical) ped.position.z += step;
+    else ped.position.x += step;
     if (ped.position.z > 200 || ped.position.z < -200 || ped.position.x > 195 || ped.position.x < -200) {
       ped.userData.dir *= -1;
     }

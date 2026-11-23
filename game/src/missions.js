@@ -1,15 +1,19 @@
-// OPAL COAST — missions and story. One clear job: run the six-job story
-// chain as a state machine (drive / ram / evade / deliver / collect / race),
-// plus side activities, markers, dialogue and rewards.
+// OPAL COAST — missions and story.
+// One job: run the six-job story chain as a state machine (drive / ram /
+// evade / deliver / collect / race), plus markers, dialogue and rewards.
 
 function createMissions(scene) {
   const beaconMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.55 });
   const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 24, 16, 1, true), beaconMat);
-  beacon.position.set(0, 12, 0); beacon.visible = false;
+  beacon.position.set(0, 12, 0);
+  beacon.visible = false;
   scene.add(beacon);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.3, 8, 32),
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(3.2, 0.3, 8, 32),
     new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-  ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; ring.visible = false;
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.3;
+  ring.visible = false;
   scene.add(ring);
   return {
     index: 0, stage: 0, active: false, done: false,
@@ -26,10 +30,17 @@ function missionDef(m) { return MISSIONS[m.index] || null; }
 function startMission(m, game) {
   const def = missionDef(m);
   if (!def) { m.done = true; return; }
-  m.active = true; m.stage = 0; m.timer = 0; m.collected = 0; m.hits = 0;
-  m.raceCp = 0; m.raceTime = 0; m.cargoHp = 100;
+  m.active = true;
+  m.stage = 0;
+  m.timer = 0;
+  m.collected = 0;
+  m.hits = 0;
+  m.raceCp = 0;
+  m.raceTime = 0;
+  m.cargoHp = 100;
   m.target = { x: def.target.x, z: def.target.z };
-  m.beacon.visible = true; m.ring.visible = true;
+  m.beacon.visible = true;
+  m.ring.visible = true;
   m.beacon.position.set(m.target.x, 12, m.target.z);
   m.ring.position.set(m.target.x, 0.3, m.target.z);
   showDialogue(m, def.giver, def.dialogue);
@@ -59,7 +70,9 @@ function setupMissionTarget(m, game, def) {
   if (def.kind === 'ram') {
     const tanker = makeCar('truck', 0x38bdf8);
     tanker.position.set(120, 0, 60);
-    tanker.userData.angle = Math.PI / 2; tanker.userData.speed = 12; tanker.userData.hp = 100;
+    tanker.userData.angle = Math.PI / 2;
+    tanker.userData.speed = 12;
+    tanker.userData.hp = 100;
     tanker.userData.vertical = false;
     game.scene.add(tanker);
     m.targetCar = tanker;
@@ -68,7 +81,8 @@ function setupMissionTarget(m, game, def) {
   if (def.kind === 'collect') {
     const spots = [[150, -120], [120, -90], [168, -60], [140, -150], [176, -100]];
     for (const [x, z] of spots) {
-      const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.9),
+      const mesh = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.9),
         new THREE.MeshLambertMaterial({ color: 0xfacc15, emissive: 0xaa8800 }));
       mesh.position.set(x, 1.2, z);
       game.scene.add(mesh);
@@ -84,7 +98,8 @@ function setupMissionTarget(m, game, def) {
       cps.push([x, z]);
     }
     for (const [x, z] of cps) {
-      const mesh = new THREE.Mesh(new THREE.TorusGeometry(4, 0.4, 8, 24),
+      const mesh = new THREE.Mesh(
+        new THREE.TorusGeometry(4, 0.4, 8, 24),
         new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
       mesh.position.set(x, 2.5, z);
       game.scene.add(mesh);
@@ -92,11 +107,13 @@ function setupMissionTarget(m, game, def) {
     }
     const rival = makeCar('muscle', 0xef4444);
     rival.position.set(168, 0, 148);
-    rival.userData.angle = Math.PI; rival.userData.speed = 0;
+    rival.userData.angle = Math.PI;
+    rival.userData.speed = 0;
     game.scene.add(rival);
     m.raceRival = rival;
     // Player starts on the line too.
-    game.player.x = 160; game.player.z = 148;
+    game.player.x = 160;
+    game.player.z = 148;
     if (game.player.car) {
       game.player.car.position.set(160, 0, 148);
       game.player.car.userData.angle = Math.PI;
@@ -111,7 +128,8 @@ function setupMissionTarget(m, game, def) {
 function completeMission(m, game) {
   const def = missionDef(m);
   m.active = false;
-  m.beacon.visible = false; m.ring.visible = false;
+  m.beacon.visible = false;
+  m.ring.visible = false;
   if (m.targetCar) { game.scene.remove(m.targetCar); m.targetCar = null; }
   game.player.cash += def.reward;
   game.player.rp += def.rp;
@@ -127,9 +145,102 @@ function completeMission(m, game) {
 
 function failMission(m, game, reason) {
   m.active = false;
-  m.beacon.visible = false; m.ring.visible = false;
+  m.beacon.visible = false;
+  m.ring.visible = false;
   showBanner(m, 'JOB FAILED', reason + ' — talk to Dalia to try again.');
   showDialogue(m, 'Dalia Kade', 'It happens, Slick. Shake it off. The job is still open when you are ready.');
+}
+
+// Per-kind stage logic. Each handler gets the mission state, the game and
+// dt, and advances stages, shows banners or completes/fails the job.
+const KIND_HANDLERS = {
+  drive(m, game, dt, distTarget) { advanceArrival(m, game, distTarget); },
+  deliver(m, game, dt, distTarget) {
+    advanceArrival(m, game, distTarget);
+    const p = game.player;
+    if (p.car && Math.abs(p.car.userData.speed || 0) > 26) {
+      m.cargoHp -= dt * 6;
+      if (m.cargoHp <= 0) failMission(m, game, 'The cargo cracked on a hard hit');
+    }
+  },
+  ram(m, game, dt, distTarget) {
+    const def = missionDef(m);
+    const p = game.player;
+    if (!m.targetCar) return;
+    if (!p.onFoot && p.car) {
+      const d = Math.hypot(p.car.position.x - m.targetCar.position.x, p.car.position.z - m.targetCar.position.z);
+      const spd = Math.abs(p.car.userData.speed || 0);
+      if (d < 5.5 && spd > 10) {
+        m.targetCar.userData.hp -= spd * dt * 2.2;
+        m.hits += dt;
+        if (m.targetCar.userData.hp <= 0) {
+          m.stage = 2;
+          showBanner(m, def.job + ' · ' + def.title, 'Tanker wrecked — vanish before the units arrive');
+          addHeat(game.police, 20);
+          completeMission(m, game);
+        }
+      }
+    }
+    if (m.targetCar.userData.hp < 60 && m.stage === 0) {
+      m.stage = 1;
+      showBanner(m, def.job + ' · ' + def.title, def.stages[1] + ' — hull ' + Math.max(0, Math.round(m.targetCar.userData.hp)) + '%');
+    }
+  },
+  evade(m, game, dt, distTarget) {
+    const def = missionDef(m);
+    const stars = wantedStars(game.police);
+    if (stars === 0) completeMission(m, game);
+    else if (game.police.cooldown > 4 && m.stage === 0) {
+      m.stage = 1;
+      showBanner(m, def.job + ' · ' + def.title, 'They lost you — stay hidden until the heat dies');
+    }
+  },
+  collect(m, game, dt, distTarget) {
+    const def = missionDef(m);
+    const p = game.player;
+    for (const c of m.collectibles) {
+      if (!c.taken && Math.hypot(p.x - c.x, p.z - c.z) < 2.4) {
+        c.taken = true;
+        m.collected += 1;
+        c.mesh.visible = false;
+        game.audio.blip(880);
+        showBanner(m, def.job + ' · ' + def.title, 'Filters ' + m.collected + '/5');
+      }
+      if (!c.taken) c.mesh.rotation.y += dt * 2;
+    }
+    if (m.collected >= 5) completeMission(m, game);
+  },
+  race(m, game, dt, distTarget) {
+    const def = missionDef(m);
+    const p = game.player;
+    if (m.stage === 0) {
+      if (!p.onFoot && Math.abs(p.car.userData.speed || 0) > 2) m.stage = 1;
+      return;
+    }
+    m.raceTime += dt;
+    const cp = m.checkpoints[m.raceCp];
+    if (cp && Math.hypot(p.x - cp.x, p.z - cp.z) < 7) {
+      cp.hit = true;
+      cp.mesh.material.color.setHex(0x22c55e);
+      m.raceCp += 1;
+      game.audio.blip(660 + m.raceCp * 60);
+      showBanner(m, def.job + ' · ' + def.title, 'Checkpoint ' + m.raceCp + '/8');
+    }
+    if (m.raceCp >= 8) completeMission(m, game);
+    else if (m.raceTime > 150) failMission(m, game, 'Nacho took the pink slip — too slow');
+  },
+};
+
+// Drive/deliver share one pattern: reach the beacon, then reach the ring.
+function advanceArrival(m, game, distTarget) {
+  const def = missionDef(m);
+  if (m.stage === 0 && distTarget < 7) {
+    m.stage = 1;
+    showBanner(m, def.job + ' · ' + def.title, def.stages[1]);
+    if (def.kind === 'deliver') showDialogue(m, 'Juno Park', 'Load is on. Easy does it — the halo at the hideout is waiting.');
+  } else if (m.stage === 1 && distTarget < 4) {
+    completeMission(m, game);
+  }
 }
 
 function updateMissions(m, game, dt) {
@@ -153,17 +264,13 @@ function updateMissions(m, game, dt) {
     if (t.position.z > 190) t.userData.angle = Math.PI;
     if (t.position.z < -190) t.userData.angle = 0;
   }
-  // Race rival follows checkpoints.
+  // Race rival follows the checkpoints.
   if (m.raceRival && def.kind === 'race' && m.stage >= 1) {
     const r = m.raceRival;
     const cp = m.checkpoints[Math.min(m.raceCp, m.checkpoints.length - 1)];
     if (cp) {
       const dx = cp.x - r.position.x, dz = cp.z - r.position.z;
-      const want = Math.atan2(dx, dz);
-      let da = want - r.userData.angle;
-      while (da > Math.PI) da -= Math.PI * 2;
-      while (da < -Math.PI) da += Math.PI * 2;
-      r.userData.angle += Math.max(-1.8 * dt, Math.min(1.8 * dt, da * 1.6));
+      r.userData.angle = steerToward(r.userData.angle, Math.atan2(dx, dz), dt, 1.8);
       r.userData.speed += (30 - r.userData.speed) * Math.min(1, dt);
       r.position.x += Math.sin(r.userData.angle) * r.userData.speed * dt;
       r.position.z += Math.cos(r.userData.angle) * r.userData.speed * dt;
@@ -171,80 +278,6 @@ function updateMissions(m, game, dt) {
     }
   }
   const distTarget = m.target ? Math.hypot(p.x - m.target.x, p.z - m.target.z) : 1e9;
-
-  if (def.kind === 'drive' || def.kind === 'deliver') {
-    if (m.stage === 0 && distTarget < 7) {
-      m.stage = 1;
-      showBanner(m, def.job + ' · ' + def.title, def.stages[1]);
-      if (def.kind === 'deliver') showDialogue(m, 'Juno Park', 'Load is on. Easy does it — the halo at the hideout is waiting.');
-    } else if (m.stage === 1 && distTarget < 4) {
-      completeMission(m, game);
-    }
-    if (def.kind === 'deliver' && p.car && Math.abs(p.car.userData.speed || 0) > 26) {
-      m.cargoHp -= dt * 6;
-      if (m.cargoHp <= 0) failMission(m, game, 'The cargo cracked on a hard hit');
-    }
-  }
-  if (def.kind === 'ram') {
-    if (m.targetCar) {
-      // Player ramming the tanker damages it.
-      if (!p.onFoot && p.car) {
-        const d = Math.hypot(p.car.position.x - m.targetCar.position.x, p.car.position.z - m.targetCar.position.z);
-        const spd = Math.abs(p.car.userData.speed || 0);
-        if (d < 5.5 && spd > 10) {
-          m.targetCar.userData.hp -= spd * dt * 2.2;
-          m.hits += dt;
-          if (m.targetCar.userData.hp <= 0) {
-            m.stage = 2;
-            showBanner(m, def.job + ' · ' + def.title, 'Tanker wrecked — vanish before the units arrive');
-            addHeat(game.police, 20);
-            completeMission(m, game);
-          }
-        }
-      }
-      if (m.targetCar.userData.hp < 60 && m.stage === 0) {
-        m.stage = 1;
-        showBanner(m, def.job + ' · ' + def.title, def.stages[1] + ' — hull ' + Math.max(0, Math.round(m.targetCar.userData.hp)) + '%');
-      }
-    }
-  }
-  if (def.kind === 'evade') {
-    const stars = wantedStars(game.police);
-    if (stars === 0) completeMission(m, game);
-    else if (game.police.cooldown > 4 && m.stage === 0) {
-      m.stage = 1;
-      showBanner(m, def.job + ' · ' + def.title, 'They lost you — stay hidden until the heat dies');
-    }
-  }
-  if (def.kind === 'collect') {
-    for (const c of m.collectibles) {
-      if (!c.taken && Math.hypot(p.x - c.x, p.z - c.z) < 2.4) {
-        c.taken = true; m.collected += 1;
-        c.mesh.visible = false;
-        game.audio.blip(880);
-        showBanner(m, def.job + ' · ' + def.title, 'Filters ' + m.collected + '/5');
-      }
-      if (!c.taken) c.mesh.rotation.y += dt * 2;
-    }
-    if (m.collected >= 5) completeMission(m, game);
-  }
-  if (def.kind === 'race') {
-    if (m.stage === 0) {
-      if (!p.onFoot && Math.abs(p.car.userData.speed || 0) > 2) m.stage = 1;
-    } else {
-      m.raceTime += dt;
-      const cp = m.checkpoints[m.raceCp];
-      if (cp && Math.hypot(p.x - cp.x, p.z - cp.z) < 7) {
-        cp.hit = true; cp.mesh.material.color.setHex(0x22c55e);
-        m.raceCp += 1;
-        game.audio.blip(660 + m.raceCp * 60);
-        showBanner(m, def.job + ' · ' + def.title, 'Checkpoint ' + m.raceCp + '/8');
-      }
-      if (m.raceCp >= 8) {
-        const rivalCp = m.checkpoints.filter(c => c.hit).length;
-        if (m.raceCp >= 8) completeMission(m, game);
-      }
-      if (m.raceTime > 150) failMission(m, game, 'Nacho took the pink slip — too slow');
-    }
-  }
+  const handler = KIND_HANDLERS[def.kind];
+  if (handler) handler(m, game, dt, distTarget);
 }

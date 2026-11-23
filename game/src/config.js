@@ -1,56 +1,72 @@
-// OPAL COAST — shared configuration, city layout, story and mission data.
-// One clear job: every number, name and mission definition the rest of the
-// game reads from. Nothing here touches the renderer or the DOM.
+// OPAL COAST — shared configuration.
+// The single place every other file reads numbers, names and story from:
+// the city layout, the crew, the ranks, the weapons, the cars, the six
+// jobs, the districts and the radio stations. No rendering, no DOM here.
 
 const OPAL = {
   title: 'OPAL COAST',
   subtitle: 'a sun-soaked open-world crime story',
   city: 'Opal Coast',
-  // World: a coastal grid. Roads run every BLOCK metres; the beach and the
-  // ocean sit east of EAST_BEACH, the marina north, the desal plant west.
+  // The city is a road grid on the coast. Roads repeat every BLOCK metres;
+  // east of EAST_BEACH the sand starts, then the ocean. The marina is
+  // north, the desal plant west, the docks south-west.
   BLOCK: 46,
-  GRID: 7,               // 7 x 7 blocks, centred on (0,0)
+  GRID: 7,               // 7 x 7 blocks, centred on (0, 0)
   ROAD_HALF: 5,          // half-width of a road
   EAST_BEACH: 175,       // x beyond this is sand, then water
   WORLD_R: 210,          // playable radius, soft-clamped
   SEA_LEVEL: 0.4,
-  GARAGE: { x: -20, z: -20 }, // Juno's garage: safehouse, repair, respawn
+  GARAGE: { x: -20, z: -20 }, // Juno's garage: safehouse and respawn
   SUNSET: { skyTop: 0x2e4a7a, skyMid: 0xf2a35e, skyLow: 0xffd9a0, fog: 0xf7b06a, sun: 0xffd27a },
-  DAY:   { skyTop: 0x3f8fd2, skyMid: 0x9fd8ef, skyLow: 0xffe9b0, fog: 0xcfe8f2, sun: 0xfff2c0 },
+  DAY:    { skyTop: 0x3f8fd2, skyMid: 0x9fd8ef, skyLow: 0xffe9b0, fog: 0xcfe8f2, sun: 0xfff2c0 },
 };
 
+// The people of Opal Coast. Mero "Slick" Vance is the player; Dalia Kade
+// hands out the jobs, Juno Park fixes the cars, Kiki Sol watches the
+// streets, and Nacho Reyes is the rival who wants the coast for himself.
 const CREW = {
-  player: { name: 'Mero Vance', alias: 'Slick', role: 'Driver · ex water-hauler', color: '#2dd4bf' },
-  fixer:  { name: 'Dalia Kade', role: 'Fixer · Dock Hand', color: '#f59e0b' },
+  player:   { name: 'Mero Vance', alias: 'Slick', role: 'Driver · ex water-hauler', color: '#2dd4bf' },
+  fixer:    { name: 'Dalia Kade', role: 'Fixer · Dock Hand', color: '#f59e0b' },
   mechanic: { name: 'Juno Park', role: 'Mechanic · Garage', color: '#a78bfa' },
-  lookout: { name: 'Kiki Sol', role: 'Lookout · Rooftops', color: '#f472b6' },
-  rival:  { name: 'Nacho Reyes', role: 'Rival · Union wheelman', color: '#ef4444' },
-  villain:{ name: 'The Hydration Union', role: 'Owns the water grid', color: '#38bdf8' },
+  lookout:  { name: 'Kiki Sol', role: 'Lookout · Rooftops', color: '#f472b6' },
+  rival:    { name: 'Nacho Reyes', role: 'Rival · Union wheelman', color: '#ef4444' },
+  villain:  { name: 'The Hydration Union', role: 'Owns the water grid', color: '#38bdf8' },
 };
 
+// Respect ranks: earn RP from jobs and the rank name on the HUD changes.
 const RANKS = [
-  { name: 'Nobody', rp: 0 }, { name: 'Dock Hand', rp: 250 }, { name: 'Runner', rp: 700 },
-  { name: 'Wheelman', rp: 1500 }, { name: 'Fixer', rp: 3000 }, { name: 'King of the Coast', rp: 5200 },
+  { name: 'Nobody', rp: 0 },
+  { name: 'Dock Hand', rp: 250 },
+  { name: 'Runner', rp: 700 },
+  { name: 'Wheelman', rp: 1500 },
+  { name: 'Fixer', rp: 3000 },
+  { name: 'King of the Coast', rp: 5200 },
 ];
 
+// Weapons. Fists and the pistol are yours from the start; the SMG and the
+// rifle unlock when your respect is high enough.
 const WEAPONS = [
-  { id: 'fists', name: 'FISTS', ammo: Infinity, damage: 12, range: 2.2, rate: 0.45, icon: '1' },
-  { id: 'pistol', name: 'P9', ammo: 84, damage: 26, range: 42, rate: 0.28, icon: '2' },
-  { id: 'smg', name: 'MAKO 45', ammo: 208, damage: 16, range: 36, rate: 0.09, icon: '3', locked: true, lockRp: 700 },
-  { id: 'rifle', name: 'GATOR', ammo: 60, damage: 55, range: 70, rate: 0.6, icon: '4', locked: true, lockRp: 1500 },
+  { id: 'fists',  name: 'FISTS',   ammo: Infinity, damage: 12, range: 2.2, rate: 0.45, icon: '1' },
+  { id: 'pistol', name: 'P9',      ammo: 84,       damage: 26, range: 42,  rate: 0.28, icon: '2' },
+  { id: 'smg',    name: 'MAKO 45', ammo: 208,      damage: 16, range: 36,  rate: 0.09, icon: '3', locked: true, lockRp: 700 },
+  { id: 'rifle',  name: 'GATOR',   ammo: 60,       damage: 55, range: 70,  rate: 0.6,  icon: '4', locked: true, lockRp: 1500 },
 ];
 
+// Cars. top is top speed in m/s, accel the approach rate, grip the steering
+// response. Traffic only spawns the first four types; the police car and
+// the tanker are special.
 const CAR_TYPES = [
-  { id: 'sedan', name: 'Calyx Sprint GT', top: 34, accel: 16, grip: 2.6, color: 0xd94f3d, price: 0 },
-  { id: 'coupe', name: 'Rukan Pelo GT', top: 42, accel: 20, grip: 2.9, color: 0xf97316, price: 1200 },
-  { id: 'muscle', name: 'Vela V8 Brute', top: 38, accel: 24, grip: 2.2, color: 0x7c3aed, price: 900 },
-  { id: 'taxi', name: 'Opal Cab', top: 30, accel: 13, grip: 2.4, color: 0xfacc15, price: 0 },
-  { id: 'truck', name: 'Union Tanker', top: 26, accel: 10, grip: 1.8, color: 0x38bdf8, price: 0 },
+  { id: 'sedan',  name: 'Calyx Sprint GT',  top: 34, accel: 16, grip: 2.6, color: 0xd94f3d, price: 0 },
+  { id: 'coupe',  name: 'Rukan Pelo GT',    top: 42, accel: 20, grip: 2.9, color: 0xf97316, price: 1200 },
+  { id: 'muscle', name: 'Vela V8 Brute',   top: 38, accel: 24, grip: 2.2, color: 0x7c3aed, price: 900 },
+  { id: 'taxi',   name: 'Opal Cab',        top: 30, accel: 13, grip: 2.4, color: 0xfacc15, price: 0 },
+  { id: 'truck',  name: 'Union Tanker',    top: 26, accel: 10, grip: 1.8, color: 0x38bdf8, price: 0 },
   { id: 'police', name: 'OCPD Interceptor', top: 44, accel: 26, grip: 3.1, color: 0x1e293b, price: 0 },
 ];
 
-// Mission chain. Each mission is a small state machine in missions.js:
-// stages advance on triggers (arrive / ram / timer / collect / checkpoint).
+// The six-job story. missions.js runs each one as a small state machine;
+// kind selects the behaviour, stages are the HUD steps, target is the
+// beacon position, reward and rp are paid on completion.
 const MISSIONS = [
   {
     id: 'm1', job: 'JOB 1/6', title: 'THE DRY RUN', giver: 'Dalia Kade',
@@ -96,19 +112,26 @@ const MISSIONS = [
   },
 ];
 
+// Named districts for the HUD: the nearest district centre wins.
 const DISTRICTS = [
-  { name: 'Marina', x: 120, z: -120, r: 70 }, { name: 'Desal Plant', x: -138, z: -138, r: 55 },
-  { name: 'Old Town', x: -80, z: 40, r: 75 }, { name: 'Strand Boulevard', x: 150, z: 40, r: 80 },
-  { name: 'Puerto Viejo', x: -40, z: -120, r: 70 }, { name: 'The Docks', x: -140, z: 120, r: 60 },
-  { name: 'Downtown', x: 0, z: 0, r: 80 }, { name: 'Kumala Pier', x: 170, z: -40, r: 45 },
+  { name: 'Marina', x: 120, z: -120, r: 70 },
+  { name: 'Desal Plant', x: -138, z: -138, r: 55 },
+  { name: 'Old Town', x: -80, z: 40, r: 75 },
+  { name: 'Strand Boulevard', x: 150, z: 40, r: 80 },
+  { name: 'Puerto Viejo', x: -40, z: -120, r: 70 },
+  { name: 'The Docks', x: -140, z: 120, r: 60 },
+  { name: 'Downtown', x: 0, z: 0, r: 80 },
+  { name: 'Kumala Pier', x: 170, z: -40, r: 45 },
 ];
 
+// The three synth radio stations (WebAudio, no audio files).
 const RADIO = [
   { name: 'Radio Mango 98.6', tag: 'Guava Sunrise', bpm: 112, root: 220, mode: 'major' },
   { name: 'Coast FM 101.1', tag: 'Salt Air Nights', bpm: 96, root: 196, mode: 'minor' },
   { name: 'Union Static 88.4', tag: 'Pirate Broadcast', bpm: 128, root: 247, mode: 'minor' },
 ];
 
+// Deterministic RNG so the city layout is the same every load.
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {

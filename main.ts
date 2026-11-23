@@ -1,4 +1,7 @@
 // OPAL COAST — make.fun entrypoint for gta6-01.
+// Rebuilt in the recorded session of 2026-11-24: every counted file was
+// deleted and written fresh here, and this entrypoint keeps the fix that
+// clears /output's contents instead of removing the mount point.
 // Hands the game in: copies game/ and screenshots/ from this repository to
 // the output directory and writes /output/dossier.json with buildDossier
 // from vendor/makefun-game.ts. Standard library only; runs twice and must

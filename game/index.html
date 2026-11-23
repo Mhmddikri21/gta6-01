@@ -6,53 +6,63 @@
 <link rel="icon" href="data:,">
 <title>OPAL COAST — an open-world crime story</title>
 <style>
+  :root {
+    --ink: #ffffff; --ink-soft: #e2e8f0; --ink-dim: #cbd5e1;
+    --panel: rgba(8, 14, 26, 0.78); --panel-line: rgba(255,255,255,0.14);
+    --gold: #facc15; --gold-soft: #fde68a; --teal: #2dd4bf;
+    --green: #4ade80; --green-deep: #22c55e; --red: #ef4444;
+    --red-soft: #fca5a5; --red-mid: #f87171; --blue: #38bdf8;
+    --amber: #f59e0b; --violet: #a78bfa; --pink: #f472b6;
+    --cyan: #22d3ee; --night: #0b1220; --map-sea: #1d2b3a;
+    --shadow: 0 2px 8px rgba(0,0,0,0.7); --shadow-big: 0 4px 18px rgba(0,0,0,0.6);
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1220; font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--night); font-family: 'Segoe UI', Arial, sans-serif; color: var(--ink); }
   #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .panel { background: rgba(8, 14, 26, 0.78); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; backdrop-filter: blur(2px); }
+  .panel { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px; backdrop-filter: blur(2px); }
   /* Top-left: mission card */
-  #mission-card { position: fixed; top: 14px; left: 14px; width: 380px; padding: 12px 14px; z-index: 5; border-left: 5px solid #facc15; }
-  .m-job { font-size: 19px; font-weight: 900; letter-spacing: 0.5px; color: #fde68a; text-transform: uppercase; }
-  .m-stage { font-size: 13px; font-weight: 700; color: #2dd4bf; margin-top: 3px; }
-  .m-brief { font-size: 13px; line-height: 1.45; color: #e2e8f0; margin-top: 5px; }
-  /* Top-right: cash, stars, clock */
+  #mission-card { position: fixed; top: 14px; left: 14px; width: 380px; padding: 12px 14px; z-index: 5; border-left: 5px solid var(--gold); }
+  .m-job { font-size: 19px; font-weight: 900; letter-spacing: 0.5px; color: var(--gold-soft); text-transform: uppercase; }
+  .m-stage { font-size: 13px; font-weight: 700; color: var(--teal); margin-top: 3px; }
+  .m-brief { font-size: 13px; line-height: 1.45; color: var(--ink-soft); margin-top: 5px; }
+  /* Top-right: cash, clock, stars, district */
   #top-right { position: fixed; top: 14px; right: 14px; text-align: right; z-index: 5; }
-  #cash { font-size: 34px; font-weight: 900; color: #4ade80; text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
-  #clock { font-size: 15px; font-weight: 700; color: #e2e8f0; }
-  .stars { font-size: 26px; letter-spacing: 4px; color: #facc15; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
-  .stars.hot { color: #ef4444; animation: blink 0.7s steps(2) infinite; }
+  #cash { font-size: 34px; font-weight: 900; color: var(--green); text-shadow: var(--shadow); }
+  #clock { font-size: 15px; font-weight: 700; color: var(--ink-soft); }
+  .stars { font-size: 26px; letter-spacing: 4px; color: var(--gold); text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+  .stars.hot { color: var(--red); animation: blink 0.7s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0.45; } }
-  #district { font-size: 15px; font-weight: 800; color: #fde68a; text-transform: uppercase; }
-  /* Dispatch list under mission card */
+  #district { font-size: 15px; font-weight: 800; color: var(--gold-soft); text-transform: uppercase; }
+  /* Dispatch list under the mission card */
   #dispatch { position: fixed; top: 168px; left: 14px; width: 300px; padding: 10px 12px; z-index: 5; display: none; }
-  .d-head { font-size: 13px; font-weight: 900; color: #fca5a5; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 5px; }
-  .d-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0; color: #e2e8f0; }
-  .d-row b { color: #f87171; }
+  .d-head { font-size: 13px; font-weight: 900; color: var(--red-soft); border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 5px; }
+  .d-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0; color: var(--ink-soft); }
+  .d-row b { color: var(--red-mid); }
   /* Bottom-left: minimap + vitals */
   #bottom-left { position: fixed; left: 14px; bottom: 14px; z-index: 5; display: flex; flex-direction: column; gap: 8px; }
   #minimap-wrap { position: relative; width: 168px; height: 168px; }
-  #minimap { width: 168px; height: 168px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75); box-shadow: 0 4px 18px rgba(0,0,0,0.6); background: #1d2b3a; }
+  #minimap { width: 168px; height: 168px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75); box-shadow: var(--shadow-big); background: var(--map-sea); }
   #vitals { padding: 10px 12px; width: 220px; }
   .bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; margin: 3px 0; }
-  .bar-row label { width: 52px; color: #cbd5e1; }
+  .bar-row label { width: 52px; color: var(--ink-dim); }
   .bar { flex: 1; height: 10px; background: rgba(255,255,255,0.18); border-radius: 5px; overflow: hidden; }
   .bar i { display: block; height: 100%; }
-  #health-fill { background: #22c55e; width: 100%; }
-  #armour-fill { background: #38bdf8; width: 50%; }
-  #rank-fill { background: #f59e0b; width: 0%; }
+  #health-fill { background: var(--green-deep); width: 100%; }
+  #armour-fill { background: var(--blue); width: 50%; }
+  #rank-fill { background: var(--amber); width: 0%; }
   .bar-row em { font-style: normal; width: 26px; text-align: right; }
   /* Bottom-right: weapons + speed */
   #bottom-right { position: fixed; right: 14px; bottom: 14px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
   #weapons { display: flex; gap: 6px; }
-  .wslot { width: 74px; padding: 7px 8px; background: rgba(8,14,26,0.78); border: 1px solid rgba(255,255,255,0.16); border-radius: 8px; text-align: center; }
-  .wslot.active { border-color: #facc15; background: rgba(250,204,21,0.22); }
-  .wslot b { display: block; font-size: 11px; color: #facc15; }
+  .wslot { width: 74px; padding: 7px 8px; background: var(--panel); border: 1px solid rgba(255,255,255,0.16); border-radius: 8px; text-align: center; }
+  .wslot.active { border-color: var(--gold); background: rgba(250,204,21,0.22); }
+  .wslot b { display: block; font-size: 11px; color: var(--gold); }
   .wslot span { display: block; font-size: 12px; font-weight: 800; }
-  .wslot em { font-style: normal; font-size: 11px; color: #cbd5e1; }
-  #speed { text-align: right; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  .wslot em { font-style: normal; font-size: 11px; color: var(--ink-dim); }
+  #speed { text-align: right; text-shadow: var(--shadow); }
   #speed b { font-size: 52px; font-weight: 900; line-height: 1; }
-  #speed span { font-size: 15px; font-weight: 700; color: #fde68a; }
-  #speed .carname { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+  #speed span { font-size: 15px; font-weight: 700; color: var(--gold-soft); }
+  #speed .carname { font-size: 13px; font-weight: 700; color: var(--ink-soft); }
   /* Crew + rank strip, right side */
   #crew { position: fixed; right: 14px; top: 150px; width: 230px; z-index: 5; padding: 10px 12px; }
   #crew .c-row { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12.5px; }
@@ -60,27 +70,32 @@
   .avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #082f49; flex: none; }
   /* Dialogue + banner */
   #dialogue { position: fixed; left: 50%; transform: translateX(-50%); bottom: 120px; width: 560px; max-width: 80vw; padding: 12px 16px; z-index: 6; display: none; gap: 12px; align-items: flex-start; }
-  #dialogue b { color: #2dd4bf; font-size: 14px; display: block; margin-bottom: 2px; }
+  #dialogue b { color: var(--teal); font-size: 14px; display: block; margin-bottom: 2px; }
   #dialogue span { font-size: 14px; line-height: 1.45; color: #f1f5f9; }
   #banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; z-index: 6; display: none; text-shadow: 0 3px 12px rgba(0,0,0,0.9); }
-  #banner b { display: block; font-size: 34px; font-weight: 900; color: #facc15; letter-spacing: 1px; }
-  #banner span { font-size: 16px; font-weight: 600; color: #fff; }
+  #banner b { display: block; font-size: 34px; font-weight: 900; color: var(--gold); letter-spacing: 1px; }
+  #banner span { font-size: 16px; font-weight: 600; color: var(--ink); }
   /* Bottom centre: hint + radio */
   #bottom-centre { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 5; text-align: center; }
-  #hint { font-size: 12.5px; font-weight: 700; color: #e2e8f0; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
-  #radio { font-size: 12.5px; color: #2dd4bf; font-weight: 700; margin-top: 3px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+  #hint { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+  #radio { font-size: 12.5px; color: var(--teal); font-weight: 700; margin-top: 3px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
   /* Start / pause screens */
   .screen { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(10,20,40,0.88), rgba(120,50,20,0.82)); text-align: center; padding: 20px; }
-  .screen h1 { font-size: 64px; font-weight: 900; letter-spacing: 4px; color: #fde68a; text-shadow: 0 4px 24px rgba(0,0,0,0.7); }
-  .screen h2 { font-size: 19px; font-weight: 600; color: #e2e8f0; margin: 8px 0 18px; max-width: 640px; line-height: 1.5; }
+  .screen h1 { font-size: 64px; font-weight: 900; letter-spacing: 4px; color: var(--gold-soft); text-shadow: 0 4px 24px rgba(0,0,0,0.7); }
+  .screen h2 { font-size: 19px; font-weight: 600; color: var(--ink-soft); margin: 8px 0 18px; max-width: 640px; line-height: 1.5; }
   .screen .story { font-size: 15px; line-height: 1.6; color: #f1f5f9; max-width: 620px; margin-bottom: 20px; }
-  .screen .controls { font-size: 13.5px; line-height: 1.9; color: #cbd5e1; margin-bottom: 22px; }
-  .screen button { font-size: 19px; font-weight: 900; padding: 13px 34px; border: none; border-radius: 10px; background: #facc15; color: #1c1917; cursor: pointer; margin: 0 6px; }
-  .screen button.ghost { background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+  .screen .controls { font-size: 13.5px; line-height: 1.9; color: var(--ink-dim); margin-bottom: 22px; }
+  .screen button { font-size: 19px; font-weight: 900; padding: 13px 34px; border: none; border-radius: 10px; background: var(--gold); color: #1c1917; cursor: pointer; margin: 0 6px; }
+  .screen button.ghost { background: rgba(255,255,255,0.16); color: var(--ink); border: 1px solid rgba(255,255,255,0.4); }
   .screen button:hover { transform: translateY(-1px); }
   #pause-screen { display: none; background: rgba(8,14,26,0.85); }
   #pause-screen h1 { font-size: 44px; }
   #selftest { position: fixed; left: 0; top: 0; z-index: 50; font-size: 11px; color: #0f0; background: rgba(0,0,0,0.5); padding: 2px 6px; }
+  /* Opal counter + photo mode (H hides the interface for a clean shot) */
+  #opal-count { color: var(--cyan); font-weight: 800; font-size: 12px; }
+  body.photo #mission-card, body.photo #top-right, body.photo #dispatch,
+  body.photo #crew, body.photo #bottom-left, body.photo #bottom-right,
+  body.photo #dialogue, body.photo #banner, body.photo #bottom-centre { display: none !important; }
 </style>
 </head>
 <body>
@@ -114,6 +129,7 @@
     <div class="bar-row"><label>HEALTH</label><div class="bar"><i id="health-fill"></i></div><em id="health-num">100</em></div>
     <div class="bar-row"><label>ARMOUR</label><div class="bar"><i id="armour-fill"></i></div><em id="armour-num">50</em></div>
     <div class="bar-row"><label>RESPECT</label><div class="bar"><i id="rank-fill"></i></div><em>★</em></div>
+    <div class="bar-row"><label>OPALS</label><span id="opal-count">◆ 0/10</span></div>
   </div>
 </div>
 
@@ -134,7 +150,7 @@
   <h1>OPAL COAST</h1>
   <h2>A sun-soaked open-world crime story — on foot and by car, with traffic, police, missions and a crew.</h2>
   <div class="story">The Hydration Union cut the water and blamed the docks. Mero "Slick" Vance — ex water-hauler, now wheelman for fixer Dalia Kade — has six jobs to take the coast back: plant a badge, wreck a tanker, vanish from the OCPD, deliver the filters, sweep the marina, and outrun Nacho Reyes down the coastal highway.</div>
-  <div class="controls">WASD move / drive &nbsp;·&nbsp; SHIFT run &nbsp;·&nbsp; E steal / exit car &nbsp;·&nbsp; SPACE handbrake<br>F punch &nbsp;·&nbsp; CLICK shoot &nbsp;·&nbsp; 1–4 weapons &nbsp;·&nbsp; M next job &nbsp;·&nbsp; R radio &nbsp;·&nbsp; P save &nbsp;·&nbsp; ESC pause</div>
+  <div class="controls">WASD move / drive &nbsp;·&nbsp; SHIFT run &nbsp;·&nbsp; E steal / exit car &nbsp;·&nbsp; SPACE handbrake<br>F punch &nbsp;·&nbsp; CLICK shoot &nbsp;·&nbsp; 1–4 weapons &nbsp;·&nbsp; M next job &nbsp;·&nbsp; R radio &nbsp;·&nbsp; P save &nbsp;·&nbsp; ESC pause<br>G repair at the garage &nbsp;·&nbsp; H photo mode &nbsp;·&nbsp; 10 opal shards hidden around the city</div>
   <div><button id="start-btn">START ENGINE</button><button id="load-btn" class="ghost">CONTINUE SAVE</button></div>
 </div>
 
@@ -150,6 +166,7 @@
 <script src="src/traffic.js"></script>
 <script src="src/police.js"></script>
 <script src="src/missions.js"></script>
+<script src="src/collectibles.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/hud.js"></script>
 <script src="src/shots.js"></script>

@@ -1,6 +1,7 @@
-// OPAL COAST — sound. One clear job: every sound is synthesized with
-// WebAudio (no audio files, no network): engine hum, sirens, shots, blips
-// and three looping radio stations. Muted until the player interacts.
+// OPAL COAST — sound.
+// One job: every sound is synthesized with WebAudio (no audio files, no
+// network): engine hum, sirens, shots, blips and three looping radio
+// stations. Muted until the player interacts.
 
 function createAudio() {
   const audio = {
@@ -20,45 +21,59 @@ function createAudio() {
     if (!audio.ctx || audio.muted) return;
     const t = audio.ctx.currentTime;
     const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
-    o.type = 'square'; o.frequency.value = freq || 660;
+    o.type = 'square';
+    o.frequency.value = freq || 660;
     g.gain.setValueAtTime(0.12, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-    o.connect(g); g.connect(audio.master);
-    o.start(t); o.stop(t + 0.2);
+    o.connect(g);
+    g.connect(audio.master);
+    o.start(t);
+    o.stop(t + 0.2);
   };
   audio.shot = function () {
     if (!audio.ctx || audio.muted) return;
     const t = audio.ctx.currentTime;
     const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(220, t);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(220, t);
     o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
     g.gain.setValueAtTime(0.25, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-    o.connect(g); g.connect(audio.master);
-    o.start(t); o.stop(t + 0.15);
+    o.connect(g);
+    g.connect(audio.master);
+    o.start(t);
+    o.stop(t + 0.15);
   };
   audio.crash = function () {
     if (!audio.ctx || audio.muted) return;
     const t = audio.ctx.currentTime;
     const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(90, t);
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(90, t);
     o.frequency.exponentialRampToValueAtTime(30, t + 0.3);
     g.gain.setValueAtTime(0.3, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    o.connect(g); g.connect(audio.master);
-    o.start(t); o.stop(t + 0.36);
+    o.connect(g);
+    g.connect(audio.master);
+    o.start(t);
+    o.stop(t + 0.36);
   };
   audio.siren = function (on) {
     if (!audio.ctx) return;
     if (on && !audio.sirenOsc) {
       const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
-      o.type = 'sine'; o.frequency.value = 700;
+      o.type = 'sine';
+      o.frequency.value = 700;
       g.gain.value = 0.03;
       const lfo = audio.ctx.createOscillator(), lg = audio.ctx.createGain();
-      lfo.frequency.value = 0.9; lg.gain.value = 260;
-      lfo.connect(lg); lg.connect(o.frequency);
-      o.connect(g); g.connect(audio.master);
-      o.start(); lfo.start();
+      lfo.frequency.value = 0.9;
+      lg.gain.value = 260;
+      lfo.connect(lg);
+      lg.connect(o.frequency);
+      o.connect(g);
+      g.connect(audio.master);
+      o.start();
+      lfo.start();
       audio.sirenOsc = { o, lfo, g };
     } else if (!on && audio.sirenOsc) {
       try { audio.sirenOsc.o.stop(); audio.sirenOsc.lfo.stop(); } catch (e) {}
@@ -69,11 +84,14 @@ function createAudio() {
     if (!audio.ctx) return;
     if (!audio.engineOsc) {
       const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
-      o.type = 'sawtooth'; o.frequency.value = 60;
+      o.type = 'sawtooth';
+      o.frequency.value = 60;
       g.gain.value = 0.0;
-      o.connect(g); g.connect(audio.master);
+      o.connect(g);
+      g.connect(audio.master);
       o.start();
-      audio.engineOsc = o; audio.engineGain = g;
+      audio.engineOsc = o;
+      audio.engineGain = g;
     }
     audio.engineOsc.frequency.value = 55 + speed01 * 130;
     audio.engineGain.gain.value = 0.02 + speed01 * 0.05;
@@ -96,15 +114,20 @@ function createAudio() {
       o.frequency.value = note;
       g.gain.setValueAtTime(0.07, t);
       g.gain.exponentialRampToValueAtTime(0.001, t + stepMs / 900);
-      o.connect(g); g.connect(audio.master);
-      o.start(t); o.stop(t + stepMs / 800);
+      o.connect(g);
+      g.connect(audio.master);
+      o.start(t);
+      o.stop(t + stepMs / 800);
       if (step % 2 === 0) {
         const b = audio.ctx.createOscillator(), bg = audio.ctx.createGain();
-        b.type = 'sine'; b.frequency.value = st.root / 2;
+        b.type = 'sine';
+        b.frequency.value = st.root / 2;
         bg.gain.setValueAtTime(0.09, t);
         bg.gain.exponentialRampToValueAtTime(0.001, t + stepMs / 700);
-        b.connect(bg); bg.connect(audio.master);
-        b.start(t); b.stop(t + stepMs / 600);
+        b.connect(bg);
+        bg.connect(audio.master);
+        b.start(t);
+        b.stop(t + stepMs / 600);
       }
       step += 1;
     }, stepMs);
