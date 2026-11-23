@@ -1,65 +1,46 @@
-# OPAL COAST — an open-world crime story
+# OPAL COAST
 
-[![gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/c/gta6-01)
-[![rank](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/rank.svg)](https://make.fun/c/gta6-01)
-[![reward](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/reward.svg)](https://make.fun/c/gta6-01)
-
-An entry for [Make GTA 6 on make.fun](https://make.fun/c/gta6-01): a complete,
-original open-world crime game that plays offline in a desktop browser from
-static files — no network, no build step. Rewritten 2026-11-24 in a recorded
-session (every counted file deleted and written fresh).
+An original open-world crime game built for the make.fun GTA 6 bounty. Nothing
+here comes from Rockstar or any other commercial game: the city, the crew, the
+story and the art are all our own.
 
 ## The game
 
-The Hydration Union cut the water and blamed the docks. Mero "Slick" Vance,
-ex water-hauler turned wheelman for fixer Dalia Kade, has six jobs to take
-Opal Coast back: plant a badge at the desal plant, wreck a Union tanker,
-vanish from the OCPD, deliver a flatbed of filters, sweep the marina on foot,
-and outrun rival Nacho Reyes down the coastal highway.
+You drive for a crew working the edge of the OCPD's patience in Opal Coast, a
+sun-soaked city on the water. Dalia dispatches the jobs, Juno runs the garage,
+Kiki watches the streets, and Nacho thinks he is faster than you.
 
-- **A city to explore** on foot and by car: a road grid, a coastal boulevard,
-  a beach, a pier and a lighthouse, traffic and pedestrians, palms and sunset.
-- **Cars to steal and drive** — walk up to any car, press E, and it is yours.
-  Arcade handling, handbrake drifts, wrecks and repairs at the garage.
-- **A wanted level and police who respond** — 5 stars, OCPD interceptors that
-  ram, a helicopter with a spotlight from 3 stars, and heat that cools only
-  when you break line of sight.
-- **Missions and a story** — six staged jobs with dialogue, objective beacons
-  and rewards, plus cash, respect ranks, a weapon wheel and a garage.
-- **Side systems** — ten opal shards hidden around the city (find them all
-  for a bonus), garage repairs at Juno's workshop (G), a near-miss bonus for
-  threading traffic at speed (+$10), and a photo mode (H) that hides the
-  interface for a clean shot of the coast.
-- **A HUD with a minimap** — mission card, OCPD dispatch list, health and
-  armour, crew panel, speed and car condition, district name, clock and a
-  three-station synth radio (WebAudio, no audio files).
-- **Start screen and save** — P saves to the browser, Continue loads it back.
+- **Drive and walk** — arcade car physics with handbrake turns and a chase
+  camera whose field of view opens up at top speed; hop out with `E` and
+  explore on foot.
+- **A living city** — 14 traffic cars looping the street grid, 26 pedestrians
+  on the sidewalks, a marina, a pier, a plaza and a beach.
+- **Wanted system** — 0 to 4 stars. Hit a pedestrian or a car and the heat
+  rises; hide out of sight for about 8 seconds and it cools. At two stars and
+  up, OCPD interceptors chase you down.
+- **Missions** — a four-job chain: meet Dalia at the marina, escort the
+  tanker (keep its hull above 30%), lose the tail at Juno's garage, then a
+  five-checkpoint coast race against Nacho.
+- **Extras** — 10 opal shards to collect (two-note chime on pickup), near-miss
+  bonuses for threading traffic at speed, garage repairs, and a photo mode
+  (`P`) that hides the HUD.
 
-## Play it
+## Controls
 
-Serve `game/` with any static server and open `game/index.html` in desktop
-Chrome, or run `node serve.ts` and open http://localhost:8080.
+WASD drive / walk · Space handbrake · E enter / exit car · P photo mode ·
+Esc pause · M mute.
 
-- WASD move / drive · SHIFT run · E steal / exit car · SPACE handbrake
-- F punch · CLICK shoot · 1–4 weapons · M next job · R radio · P save · ESC pause
+## Run it
 
-## Structure
+```sh
+node serve.ts            # serves game/ at http://localhost:8080
+```
 
-- `game/index.html` — page, HUD and menus
-- `game/src/config.js` — city, story, missions, ranks, cars, radio
-- `game/src/world.js` — the three.js city (sky, ocean, roads, buildings, palms, pier)
-- `game/src/player.js` — on-foot and driving controls, camera, health
-- `game/src/traffic.js` — traffic cars and pedestrians
-- `game/src/police.js` — wanted system, pursuit cars, helicopter
-- `game/src/missions.js` — the six-job story state machine
-- `game/src/collectibles.js` — opal shards, garage repairs, photo mode
-- `game/src/audio.js` — synthesized sound effects and radio (WebAudio)
-- `game/src/hud.js` — HUD, minimap, menus, save/load
-- `game/src/shots.js` — screenshot staging (real playable states via `?shot=N`)
-- `game/src/main.js` — boot and frame loop
-- `game/vendor/three.min.js` — vendored three.js (UMD build)
-- `main.ts` — the make.fun entrypoint: copies `game/` + `screenshots/` to
-  `/output` and writes `dossier.json`
+Or build the submission output:
 
-Everything is original: our own city, characters, vehicles, names, story,
-art, sounds and music. Nothing from any commercial game.
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+```
+
+`?shot=1..4` jumps to a staged scene (for screenshots), `?selftest=1` runs
+30 headless frames and logs `SELFTEST OK ...` to the console.

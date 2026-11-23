@@ -1,141 +1,138 @@
-// OPAL COAST — wanted system and police response.
-// One job: turn crimes into stars, stars into pursuing police cars, a
-// helicopter and roadblocks, and let the heat cool when the player breaks
-// line of sight.
+// OPAL COAST — wanted system and police interceptors that chase the player.
+// Written fresh, from scratch, in the recorded session (fourth rewrite).
+import { CONFIG } from './config.js';
 
-function createPolice(scene) {
-  return {
-    wanted: 0, heat: 0, // heat 0..100 feeds the star count
-    cars: [], heli: null, heliActive: false,
-    cooldown: 0, // seconds hidden while wanted; fills to clear the stars
-    lastSeen: 0, roadblock: null, busted: false,
-    sirenPhase: 0,
-  };
-}
-
-function wantedStars(police) {
-  if (police.heat <= 0) return 0;
-  if (police.heat < 20) return 1;
-  if (police.heat < 40) return 2;
-  if (police.heat < 60) return 3;
-  if (police.heat < 85) return 4;
-  return 5;
-}
-
-function addHeat(police, amount) {
-  police.heat = Math.min(100, police.heat + amount);
-  police.cooldown = 0;
-  police.wanted = wantedStars(police);
-}
-
-function spawnPoliceCar(scene, playerPos, rng) {
-  const car = makeCar('police', 0x1e293b);
-  const a = rng() * Math.PI * 2;
-  const d = 55 + rng() * 30;
-  car.position.set(playerPos.x + Math.sin(a) * d, 0, playerPos.z + Math.cos(a) * d);
-  car.userData.angle = Math.atan2(playerPos.x - car.position.x, playerPos.z - car.position.z);
-  car.userData.speed = 0;
-  car.rotation.y = -car.userData.angle + Math.PI / 2;
-  scene.add(car);
-  return car;
-}
-
-// Steer an angle toward a target angle, limited to maxTurn radians per
-// second, taking the shortest way around the circle.
-function steerToward(angle, want, dt, maxTurn) {
-  let da = want - angle;
-  while (da > Math.PI) da -= Math.PI * 2;
-  while (da < -Math.PI) da += Math.PI * 2;
-  return angle + Math.max(-maxTurn * dt, Math.min(maxTurn * dt, da * 2.2));
-}
-
-// Ease a speed toward a target speed.
-function easeSpeed(speed, target, dt, rate) {
-  return speed + (target - speed) * Math.min(1, dt * rate);
-}
-
-// How far the nearest pursuit car is from the player (1e9 when none).
-function nearestPursuit(police, player) {
-  let nearest = 1e9;
-  for (const car of police.cars) {
-    nearest = Math.min(nearest, Math.hypot(car.position.x - player.x, car.position.z - player.z));
+export class Police {
+  constructor(scene, state) {
+    this.scene = scene;
+    this.state = state;
+    this.interceptors = [];
+    this.flashTimer = 0;
+    this.flashOn = false;
   }
-  return nearest;
-}
 
-function updatePolice(police, scene, dt, player, rng, onBusted) {
-  const stars = wantedStars(police);
-  police.wanted = stars;
-  const wantCars = stars === 0 ? 0 : Math.min(2 + stars, 7);
-  // Spawn / despawn pursuit cars to match the wanted level.
-  while (police.cars.length < wantCars) {
-    police.cars.push(spawnPoliceCar(scene, player, rng));
+  addHeat(amount) {
+    this.state.heat = Math.min(100, this.state.heat + amount);
+    this.state.lastCrimeAt = this.state.time;
+    this.refreshStars();
   }
-  while (police.cars.length > wantCars) {
-    const c = police.cars.pop();
-    scene.remove(c);
+
+  forceStars(n) {
+    this.state.heat = Math.max(0, Math.min(100, n * 25));
+    this.state.lastCrimeAt = this.state.time;
+    this.refreshStars();
   }
-  // Helicopter from 3 stars up.
-  if (stars >= 3 && !police.heli) {
-    police.heli = makeHelicopter();
-    police.heli.position.set(player.x + 20, 42, player.z - 20);
-    scene.add(police.heli);
+
+  refreshStars() {
+    this.state.stars = this.state.heat <= 0 ? 0 : Math.min(4, Math.ceil(this.state.heat / 25));
   }
-  if (stars < 3 && police.heli) {
-    scene.remove(police.heli);
-    police.heli = null;
-  }
-  if (police.heli) {
-    const h = police.heli;
-    const tx = player.x + 14, tz = player.z - 14;
-    h.position.x += (tx - h.position.x) * Math.min(1, dt * 0.8);
-    h.position.z += (tz - h.position.z) * Math.min(1, dt * 0.8);
-    h.position.y = 40 + Math.sin(performance.now() * 0.001) * 2;
-    h.userData.rotor.rotation.y += dt * 22;
-    h.lookAt(player.x, h.position.y, player.z);
-    h.userData.spot.target.position.set(player.x - h.position.x, -h.position.y, player.z - h.position.z);
-  }
-  police.sirenPhase += dt * 6;
-  // Chase: steer toward the player, ram, and slow down when close.
-  const spec = CAR_TYPES.find(c => c.id === 'police');
-  for (const car of police.cars) {
-    const dx = player.x - car.position.x, dz = player.z - car.position.z;
-    const dist = Math.hypot(dx, dz);
-    car.userData.angle = steerToward(car.userData.angle, Math.atan2(dx, dz), dt, 2.4);
-    const target = dist > 8 ? spec.top : spec.top * 0.4;
-    car.userData.speed = easeSpeed(car.userData.speed, target, dt, 1.4);
-    car.position.x += Math.sin(car.userData.angle) * car.userData.speed * dt;
-    car.position.z += Math.cos(car.userData.angle) * car.userData.speed * dt;
-    car.rotation.y = -car.userData.angle + Math.PI / 2;
-    if (car.userData.lightbar) {
-      car.userData.lightbar.material.color.setHex(Math.sin(police.sirenPhase) > 0 ? 0xef4444 : 0x3b82f6);
+
+  buildInterceptor() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(1.9, 0.55, 4.3),
+      new THREE.MeshStandardMaterial({ color: 0x1c2f4a, roughness: 0.35, metalness: 0.5 })
+    );
+    body.position.y = 0.55;
+    body.castShadow = true;
+    g.add(body);
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.4, 1.9),
+      new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.4, metalness: 0.3 })
+    );
+    roof.position.set(0, 1.0, -0.2);
+    g.add(roof);
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xcc1111, emissive: 0xff2222, emissiveIntensity: 1.6 });
+    const blueMat = new THREE.MeshStandardMaterial({ color: 0x1111cc, emissive: 0x2222ff, emissiveIntensity: 1.6 });
+    const red = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.4), redMat);
+    red.position.set(-0.45, 1.3, -0.2);
+    g.add(red);
+    const blue = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.4), blueMat);
+    blue.position.set(0.45, 1.3, -0.2);
+    g.add(blue);
+    const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.3, 10);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111214 });
+    for (const [x, z] of [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.36, z);
+      g.add(wheel);
     }
-    // Ramming the player's car damages it; touching the player on foot
-    // starts the busted timer.
-    if (dist < 3.4) {
-      if (!player.onFoot && player.car) {
-        player.car.userData.speed *= 0.75;
-        if (player.car.userData.hp === undefined) player.car.userData.hp = 100;
-        player.car.userData.hp -= dt * 9;
-      } else {
-        player.bustedTimer += dt;
-        if (player.bustedTimer > 2.0 && onBusted) onBusted();
+    g.userData.redMat = redMat;
+    g.userData.blueMat = blueMat;
+    return g;
+  }
+
+  spawnInterceptorAt(x, z, heading) {
+    const mesh = this.buildInterceptor();
+    mesh.position.set(x, 0, z);
+    this.scene.add(mesh);
+    const unit = { mesh, pos: mesh.position, heading: heading || 0, speed: 0, ramCool: -10 };
+    this.interceptors.push(unit);
+    return unit;
+  }
+
+  spawnNearPlayer(player) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 55 + Math.random() * 20;
+    let x = player.pos.x + Math.cos(angle) * dist;
+    let z = player.pos.z + Math.sin(angle) * dist;
+    x = Math.max(-75, Math.min(75, x));
+    z = Math.max(-75, Math.min(75, z));
+    return this.spawnInterceptorAt(x, z, 0);
+  }
+
+  update(dt, player, onEvent) {
+    const now = this.state.time;
+    // Cool down after hiding out of sight for a while.
+    if (now - this.state.lastCrimeAt > CONFIG.heatCoolDelay && this.state.heat > 0) {
+      let nearest = Infinity;
+      for (const u of this.interceptors) {
+        const d = Math.hypot(u.pos.x - player.pos.x, u.pos.z - player.pos.z);
+        if (d < nearest) nearest = d;
       }
-    } else if (player.onFoot) {
-      player.bustedTimer = Math.max(0, player.bustedTimer - dt);
+      if (nearest > 45) {
+        this.state.heat = Math.max(0, this.state.heat - CONFIG.heatCoolRate * dt);
+        this.refreshStars();
+      }
+    }
+    const wanted = this.state.stars >= 2 ? Math.min(this.state.stars, 4) : 0;
+    while (this.interceptors.length < wanted) this.spawnNearPlayer(player);
+    while (this.interceptors.length > wanted) {
+      const gone = this.interceptors.pop();
+      this.scene.remove(gone.mesh);
+    }
+    // Flash the light bars.
+    this.flashTimer += dt;
+    if (this.flashTimer > 0.4) {
+      this.flashTimer = 0;
+      this.flashOn = !this.flashOn;
+      for (const u of this.interceptors) {
+        u.mesh.userData.redMat.emissiveIntensity = this.flashOn ? 2.2 : 0.2;
+        u.mesh.userData.blueMat.emissiveIntensity = this.flashOn ? 0.2 : 2.2;
+      }
+    }
+    for (const u of this.interceptors) {
+      const dx = player.pos.x - u.pos.x;
+      const dz = player.pos.z - u.pos.z;
+      const dist = Math.hypot(dx, dz);
+      const want = Math.atan2(dx, dz);
+      let diff = want - u.heading;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      u.heading += Math.max(-2.8 * dt, Math.min(2.8 * dt, diff));
+      const targetSpeed = Math.min(30 + this.state.stars * 1.5, dist * 0.9 + 8);
+      u.speed += (targetSpeed - u.speed) * Math.min(1, dt * 1.2);
+      u.pos.x += Math.sin(u.heading) * u.speed * dt;
+      u.pos.z += Math.cos(u.heading) * u.speed * dt;
+      u.mesh.rotation.y = u.heading;
+      if (dist < 3 && now - u.ramCool > 1) {
+        u.ramCool = now;
+        player.speed *= 0.7;
+        player.hull = Math.max(0, player.hull - 2);
+        this.addHeat(3);
+        onEvent('rammed', { unit: u });
+      }
     }
   }
-  // Heat cools only while no police car is close (broken line of sight):
-  // hide for 8 seconds, then the stars start falling.
-  const nearest = nearestPursuit(police, player);
-  if (stars > 0 && nearest > 42 && (!police.heli || stars < 3)) {
-    police.cooldown += dt;
-    if (police.cooldown > 8) {
-      police.heat = Math.max(0, police.heat - dt * 14);
-      if (police.heat <= 0) police.cooldown = 0;
-    }
-  } else {
-    police.cooldown = Math.max(0, police.cooldown - dt * 2);
-  }
-  return stars;
 }

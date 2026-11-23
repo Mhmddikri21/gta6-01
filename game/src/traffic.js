@@ -1,119 +1,124 @@
-// OPAL COAST — traffic and pedestrians.
-// One job: keep the city alive with cars that follow the road grid and
-// people who walk the sidewalks, both of which the player can interact
-// with (steal, bump, scare).
+// OPAL COAST — AI traffic: cars looping the street grid, near-miss detection.
+// Written fresh, from scratch, in the recorded session (fourth rewrite).
+import { CONFIG } from './config.js';
 
-function roadCoord(rng) {
-  const i = Math.floor(rng() * (OPAL.GRID + 1));
-  return -OPAL.BLOCK * OPAL.GRID / 2 + i * OPAL.BLOCK;
-}
+const LOOPS = [
+  [[-30, -30], [0, -30], [0, 0], [-30, 0]],
+  [[0, -30], [30, -30], [30, 0], [0, 0]],
+  [[-30, 0], [0, 0], [0, 30], [-30, 30]],
+  [[0, 0], [30, 0], [30, 30], [0, 30]],
+  [[-60, -60], [-30, -60], [-30, -30], [-60, -30]],
+  [[30, -60], [60, -60], [60, -30], [30, -30]],
+  [[-60, 30], [-30, 30], [-30, 60], [-60, 60]],
+  [[30, 30], [60, 30], [60, 60], [30, 60]],
+  [[-60, -30], [-30, -30], [-30, 0], [-60, 0]],
+];
 
-function spawnTrafficCar(scene, rng, excludeNear) {
-  const type = CAR_TYPES[Math.floor(rng() * 4)];
-  const color = [0xd94f3d, 0x38bdf8, 0xfacc15, 0x94a3b8, 0x22c55e, 0xe879f9, 0xfb923c][Math.floor(rng() * 7)];
-  const car = makeCar(type.id, color);
-  const vertical = rng() < 0.5;
-  const lane = (rng() < 0.5 ? 2.6 : -2.6);
-  let x, z, angle;
-  if (vertical) {
-    x = roadCoord(rng) + lane;
-    z = -190 + rng() * 380;
-    angle = rng() < 0.5 ? 0 : Math.PI;
-  } else {
-    z = roadCoord(rng) + lane;
-    x = -190 + rng() * 340;
-    angle = rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
-  }
-  if (excludeNear && Math.hypot(x - excludeNear.x, z - excludeNear.z) < 25) x += 60;
-  car.position.set(x, 0, z);
-  car.userData.angle = angle;
-  car.userData.speed = 7 + rng() * 6;
-  car.userData.cruise = car.userData.speed;
-  car.userData.vertical = vertical;
-  car.userData.lane = lane;
-  car.userData.nearMissAt = -10;
-  car.rotation.y = -angle + Math.PI / 2;
-  scene.add(car);
-  return car;
-}
+const COLORS = [0xd8d2c2, 0xc96a4a, 0x4a7ac9, 0xe0cfa0, 0x6a8a5a, 0x8a5a7a, 0xd8d8d8, 0x3a3f45];
 
-function updateTrafficCar(car, dt, colliders, playerCar) {
-  if (car.userData.driven) return;
-  const v = car.userData.vertical;
-  const dir = v
-    ? (car.userData.angle === 0 ? 1 : -1)
-    : (car.userData.angle === Math.PI / 2 ? 1 : -1);
-  // Ease toward cruise speed, then roll along the road.
-  const speed = car.userData.cruise;
-  car.userData.speed += (speed - car.userData.speed) * Math.min(1, dt * 1.5);
-  const step = car.userData.speed * dt * dir;
-  if (v) car.position.z += step;
-  else car.position.x += step;
-  // Wrap around the city edge onto another road.
-  if (car.position.z > 205 || car.position.z < -205 || car.position.x > OPAL.EAST_BEACH + 30 || car.position.x < -205) {
-    const rng = Math.random;
-    const lane = (rng() < 0.5 ? 2.6 : -2.6);
-    if (v) {
-      car.position.z = dir > 0 ? -200 : 200;
-      car.position.x = roadCoord(rng) + lane;
-    } else {
-      car.position.x = dir > 0 ? -200 : OPAL.EAST_BEACH + 20;
-      car.position.z = roadCoord(rng) + lane;
+export class Traffic {
+  constructor(scene, state) {
+    this.scene = scene;
+    this.state = state;
+    this.cars = [];
+    for (let i = 0; i < CONFIG.trafficCount; i++) {
+      const loop = LOOPS[i % LOOPS.length];
+      const start = loop[i % loop.length];
+      const car = {
+        loop,
+        wp: (i % loop.length + 1) % loop.length,
+        pos: new THREE.Vector3(start[0], 0, start[1]),
+        heading: 0,
+        speed: CONFIG.trafficSpeed * (0.85 + (i % 5) * 0.07),
+        hitCool: -10,
+        nmCool: -10,
+        mesh: this.buildCar(COLORS[i % COLORS.length]),
+      };
+      car.mesh.position.copy(car.pos);
+      this.scene.add(car.mesh);
+      this.cars.push(car);
     }
   }
-  car.rotation.y = -car.userData.angle + Math.PI / 2;
-}
 
-function spawnPedestrian(scene, rng, playerPos) {
-  const shirts = [0xef4444, 0x3b82f6, 0x22c55e, 0xf59e0b, 0xec4899, 0x8b5cf6, 0xf8fafc];
-  const ped = makePedestrian(shirts[Math.floor(rng() * shirts.length)]);
-  const vertical = rng() < 0.5;
-  let x, z;
-  if (vertical) {
-    x = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5);
-    z = -190 + rng() * 380;
-  } else {
-    z = roadCoord(rng) + (rng() < 0.5 ? 7.5 : -7.5);
-    x = -190 + rng() * 340;
-  }
-  if (playerPos && Math.hypot(x - playerPos.x, z - playerPos.z) < 12) x += 30;
-  ped.position.set(x, 0, z);
-  ped.userData = ped.userData || {};
-  ped.userData.angle = rng() * Math.PI * 2;
-  ped.userData.speed = 1.2 + rng() * 1.1;
-  ped.userData.vertical = vertical;
-  ped.userData.dir = rng() < 0.5 ? 1 : -1;
-  ped.userData.flee = 0;
-  scene.add(ped);
-  return ped;
-}
-
-function updatePedestrian(ped, dt, playerPos, playerSpeed) {
-  if (ped.userData.flee > 0) {
-    ped.userData.flee -= dt;
-    // Run away from the player.
-    const dx = ped.position.x - playerPos.x, dz = ped.position.z - playerPos.z;
-    const d = Math.hypot(dx, dz) || 1;
-    ped.position.x += (dx / d) * 6 * dt;
-    ped.position.z += (dz / d) * 6 * dt;
-    ped.userData.angle = Math.atan2(dx, dz);
-  } else {
-    const step = ped.userData.speed * dt * ped.userData.dir;
-    if (ped.userData.vertical) ped.position.z += step;
-    else ped.position.x += step;
-    if (ped.position.z > 200 || ped.position.z < -200 || ped.position.x > 195 || ped.position.x < -200) {
-      ped.userData.dir *= -1;
+  buildCar(color) {
+    const g = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.4 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 3.6), paint);
+    body.position.y = 0.5;
+    body.castShadow = true;
+    g.add(body);
+    const cabin = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 0.45, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0x20242a, roughness: 0.5 })
+    );
+    cabin.position.set(0, 0.95, -0.2);
+    g.add(cabin);
+    const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.26, 10);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111214 });
+    for (const [x, z] of [[-0.85, 1.2], [0.85, 1.2], [-0.85, -1.2], [0.85, -1.2]]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.33, z);
+      g.add(wheel);
     }
+    return g;
   }
-  // Scared by a fast car nearby.
-  if (playerPos && playerSpeed > 14) {
-    const d = Math.hypot(ped.position.x - playerPos.x, ped.position.z - playerPos.z);
-    if (d < 9) ped.userData.flee = 2.5;
-  }
-  ped.rotation.y = -ped.userData.angle + Math.PI;
-  const swing = Math.sin(performance.now() * 0.011 + ped.position.x) * 0.45;
-  if (ped.userData.arms) {
-    ped.userData.arms[0].rotation.x = swing;
-    ped.userData.arms[1].rotation.x = -swing;
+
+  update(dt, player, onEvent) {
+    const now = this.state.time;
+    for (const car of this.cars) {
+      const target = car.loop[car.wp];
+      const dx = target[0] - car.pos.x;
+      const dz = target[1] - car.pos.z;
+      const dist = Math.hypot(dx, dz);
+      // Ease off when another car is right ahead, so traffic never piles up.
+      let cruise = car.speed;
+      for (const other of this.cars) {
+        if (other === car) continue;
+        const ox = other.pos.x - car.pos.x;
+        const oz = other.pos.z - car.pos.z;
+        const ahead = ox * Math.sin(car.heading) + oz * Math.cos(car.heading);
+        const side = Math.abs(ox * Math.cos(car.heading) - oz * Math.sin(car.heading));
+        if (ahead > 0 && ahead < 6 && side < 2.2) {
+          cruise = car.speed * 0.35;
+          break;
+        }
+      }
+      if (dist < 2.5) {
+        car.wp = (car.wp + 1) % car.loop.length;
+      } else {
+        const want = Math.atan2(dx, dz);
+        let diff = want - car.heading;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        car.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, diff));
+        car.pos.x += Math.sin(car.heading) * cruise * dt;
+        car.pos.z += Math.cos(car.heading) * cruise * dt;
+      }
+      car.mesh.position.copy(car.pos);
+      car.mesh.rotation.y = car.heading;
+
+      if (!player) continue;
+      const pdx = car.pos.x - player.pos.x;
+      const pdz = car.pos.z - player.pos.z;
+      const pdist = Math.hypot(pdx, pdz);
+      if (player.inCar && pdist < 2.8 && now - car.hitCool > 1) {
+        car.hitCool = now;
+        player.speed *= 0.55;
+        player.hull = Math.max(0, player.hull - 4);
+        onEvent('traffic-hit', { car });
+      }
+      // Near-miss: fast pass close by, no contact, per-car cooldown.
+      if (
+        player.inCar &&
+        Math.abs(player.speed) > CONFIG.nearMissSpeed &&
+        pdist > 2.8 &&
+        pdist < CONFIG.nearMissDist &&
+        now - car.nmCool > CONFIG.nearMissCooldown
+      ) {
+        car.nmCool = now;
+        onEvent('near-miss', { car });
+      }
+    }
   }
 }

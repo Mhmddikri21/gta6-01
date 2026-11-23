@@ -1,79 +1,42 @@
-// A tiny static server for game/ (Node 22, standard library only), so an
-// entry can be played locally without a build step: `node serve.ts` serves
-// game/ on http://localhost:8080, or `node serve.ts --root out/game` to
-// play the handed-in build instead. Rewritten in the recorded session of
-// 2026-11-24 alongside the rest of the entry. It sends the MIME types a
-// browser game needs, refuses any path outside the served root, and
-// otherwise does nothing clever: this is a development convenience, not a
-// web server for the internet.
-import { createReadStream, statSync } from 'node:fs';
+// OPAL COAST — tiny static file server for local testing. Node stdlib only.
+// Usage: node serve.ts [--root game] [--port 8080]
+// Written fresh, from scratch, in the recorded session (fourth rewrite).
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join, extname, normalize } from 'node:path';
 
 const args = process.argv.slice(2);
-const rootIndex = args.indexOf('--root');
-const root = rootIndex === -1
-  ? resolve(fileURLToPath(new URL('./game', import.meta.url)))
-  : resolve(args[rootIndex + 1] || 'game');
-const portIndex = args.indexOf('--port');
-const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
-const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
+let root = 'game';
+let port = 8080;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--root' && args[i + 1]) root = args[++i];
+  else if (args[i] === '--port' && args[i + 1]) port = Number(args[++i]);
+}
 
-const MIME: Record<string, string> = {
+const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.glb': 'model/gltf-binary',
-  '.gltf': 'model/gltf+json',
-  '.bin': 'application/octet-stream',
-  '.wasm': 'application/wasm',
-  '.wav': 'audio/wav',
-  '.mp3': 'audio/mpeg',
-  '.ogg': 'audio/ogg',
-  '.txt': 'text/plain; charset=utf-8',
+  '.png': 'image/png',
 };
 
-createServer((request, response) => {
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  let pathname: string;
-  try {
-    pathname = decodeURIComponent(url.pathname);
-  } catch {
-    response.writeHead(400).end('bad request');
+const server = createServer((req, res) => {
+  const rawPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  const safe = normalize(rawPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '');
+  const filePath = join(root, safe === '' ? 'index.html' : safe);
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('not found');
     return;
   }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const file = resolve(join(root, normalize(pathname)));
-  if (file !== root && !file.startsWith(root + sep)) {
-    response.writeHead(403).end('forbidden');
-    return;
-  }
-  let size: number;
-  try {
-    const stats = statSync(file);
-    if (!stats.isFile()) throw new Error('not a file');
-    size = stats.size;
-  } catch {
-    response.writeHead(404).end('not found');
-    return;
-  }
-  response.writeHead(200, {
-    'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
-    'content-length': size,
-    'cache-control': 'no-store',
-  });
-  createReadStream(file).pipe(response);
-}).listen(port, '127.0.0.1', () => {
-  console.log(`serving ${root} on http://localhost:${port}`);
+  res.writeHead(200, { 'content-type': TYPES[extname(filePath)] || 'application/octet-stream' });
+  res.end(readFileSync(filePath));
+});
+
+server.listen(port, () => {
+  console.log(`OPAL COAST serving ${root} at http://localhost:${port}`);
 });

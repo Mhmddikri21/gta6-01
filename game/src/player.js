@@ -1,224 +1,191 @@
-// OPAL COAST — player controller.
-// One job: the player on foot and behind the wheel (movement, camera,
-// entering and stealing cars, punching and shooting), plus health, armour
-// and the busted / wasted flow.
+// OPAL COAST — the player: arcade car physics and on-foot walking.
+// Written fresh, from scratch, in the recorded session (fourth rewrite).
+import { CONFIG } from './config.js';
 
-function createPlayer(scene, rng) {
-  const mesh = makePedestrian(0x2dd4bf, 0xc98a5a);
-  mesh.position.set(0, 0, 8);
-  scene.add(mesh);
-  const player = {
-    mesh, x: 0, z: 8, angle: 0, speed: 0,
-    health: 100, armour: 50, cash: 1250, rp: 0,
-    onFoot: true, car: null, dead: false, bustedTimer: 0,
-    weaponIndex: 1, ammo: [Infinity, 84, 208, 60],
-    lastShot: 0, punchTimer: 0, runStamina: 100,
-    keys: {}, mouseDown: false, mouseX: 0, mouseY: 0,
-  };
-  return player;
-}
+export class Player {
+  constructor(scene, state) {
+    this.scene = scene;
+    this.state = state;
+    this.pos = new THREE.Vector3(-30, 0, 45);
+    this.heading = Math.PI;
+    this.speed = 0;
+    this.steer = 0;
+    this.hull = 100;
+    this.inCar = true;
+    this.carGroup = this.buildCar(0x2fa3a3);
+    this.walkerGroup = this.buildWalker(0x2fa3a3);
+    this.walkerGroup.visible = false;
+    this.scene.add(this.carGroup);
+    this.scene.add(this.walkerGroup);
+    this.syncMeshes();
+  }
 
-function playerForward(player) {
-  return { x: Math.sin(player.angle), z: Math.cos(player.angle) };
-}
+  buildCar(color) {
+    const g = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.55 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.6, metalness: 0.2 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 4.3), paint);
+    body.position.y = 0.55;
+    body.castShadow = true;
+    g.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), dark);
+    cabin.position.set(0, 1.05, -0.25);
+    cabin.castShadow = true;
+    g.add(cabin);
+    const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.3, 12);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.9 });
+    this.wheels = [];
+    for (const [x, z] of [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]]) {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.36, z);
+      wheel.castShadow = true;
+      g.add(wheel);
+      this.wheels.push(wheel);
+    }
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6c8, emissive: 0xffe9a0, emissiveIntensity: 1.4 });
+    for (const x of [-0.6, 0.6]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.16, 0.08), headMat);
+      lamp.position.set(x, 0.6, 2.16);
+      g.add(lamp);
+    }
+    const tailMat = new THREE.MeshStandardMaterial({ color: 0xaa1111, emissive: 0xcc2222, emissiveIntensity: 0.9 });
+    for (const x of [-0.6, 0.6]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.16, 0.08), tailMat);
+      lamp.position.set(x, 0.6, -2.16);
+      g.add(lamp);
+    }
+    return g;
+  }
 
-function clampToWorld(v, r) {
-  const d = Math.hypot(v.x, v.z);
-  if (d > r) { v.x *= r / d; v.z *= r / d; }
-  return v;
-}
+  buildWalker(color) {
+    const g = new THREE.Group();
+    const jacket = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 1.1, 10), jacket);
+    body.position.y = 0.95;
+    body.castShadow = true;
+    g.add(body);
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.27, 12, 10),
+      new THREE.MeshStandardMaterial({ color: 0xd9a986, roughness: 0.7 })
+    );
+    head.position.y = 1.72;
+    head.castShadow = true;
+    g.add(head);
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.29, 0.29, 0.12, 10),
+      new THREE.MeshStandardMaterial({ color: 0x223344 })
+    );
+    cap.position.y = 1.92;
+    g.add(cap);
+    return g;
+  }
 
-// Push a point out of every circle collider it overlaps.
-function collideWorld(x, z, colliders, radius) {
-  for (const c of colliders) {
-    const dx = x - c.x, dz = z - c.z;
-    const d = Math.hypot(dx, dz);
-    if (d < c.r + radius && d > 0.001) {
-      const push = (c.r + radius - d);
-      x += (dx / d) * push;
-      z += (dz / d) * push;
+  teleport(x, z, heading) {
+    this.pos.set(x, 0, z);
+    this.heading = heading;
+    this.speed = 0;
+    this.syncMeshes();
+  }
+
+  exitCar() {
+    if (!this.inCar) return;
+    this.inCar = false;
+    this.state.mode = 'foot';
+    this.pos.x += Math.cos(this.heading) * 2.2;
+    this.pos.z -= Math.sin(this.heading) * 2.2;
+    this.speed = 0;
+    this.syncMeshes();
+  }
+
+  enterCar() {
+    if (this.inCar) return;
+    this.inCar = true;
+    this.state.mode = 'car';
+    this.speed = 0;
+    this.syncMeshes();
+  }
+
+  syncMeshes() {
+    this.carGroup.position.copy(this.pos);
+    this.carGroup.rotation.y = this.heading;
+    this.walkerGroup.position.copy(this.pos);
+    this.walkerGroup.rotation.y = this.heading;
+    this.carGroup.visible = this.inCar;
+    this.walkerGroup.visible = !this.inCar;
+    for (const w of this.wheels || []) w.rotation.x += this.speed * 0.016;
+  }
+
+  // Headless self-test drive: straight ahead, no input.
+  autoDrive(dt, world) {
+    this.speed = Math.min(this.speed + CONFIG.playerAccel * dt, 20);
+    this.pos.x += Math.sin(this.heading) * this.speed * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * dt;
+    world.clampPos(this.pos, 1.4);
+    world.collideCircle(this.pos, 1.4, this.speed);
+    this.syncMeshes();
+  }
+
+  update(dt, input, world, onEvent) {
+    if (input.hit('KeyE')) {
+      if (this.inCar) this.exitCar();
+      else {
+        // Re-enter only when standing close to the car.
+        const dx = this.pos.x - this.carGroup.position.x;
+        const dz = this.pos.z - this.carGroup.position.z;
+        if (dx * dx + dz * dz < 25) this.enterCar();
+      }
+    }
+    if (this.inCar) this.drive(dt, input, world, onEvent);
+    else this.walk(dt, input, world);
+    this.syncMeshes();
+  }
+
+  drive(dt, input, world, onEvent) {
+    const fwd = input.down('KeyW', 'ArrowUp');
+    const rev = input.down('KeyS', 'ArrowDown');
+    const left = input.down('KeyA', 'ArrowLeft');
+    const right = input.down('KeyD', 'ArrowRight');
+    const hand = input.down('Space');
+    if (fwd) this.speed += CONFIG.playerAccel * dt;
+    if (rev) this.speed -= (this.speed > 0.5 ? CONFIG.playerBrake : CONFIG.playerAccel * 0.6) * dt;
+    if (!fwd && !rev) this.speed -= this.speed * 0.6 * dt;
+    if (hand) this.speed -= Math.sign(this.speed) * 22 * dt;
+    // A blown engine (hull 0) limps at 6 m/s until Juno repairs it.
+    const topSpeed = this.hull <= 0 ? 6 : CONFIG.playerMaxSpeed;
+    if (this.speed > topSpeed) this.speed = topSpeed;
+    if (this.speed < -CONFIG.playerReverseMax) this.speed = -CONFIG.playerReverseMax;
+    if (Math.abs(this.speed) < 0.05 && !fwd && !rev) this.speed = 0;
+
+    const steerInput = (left ? 1 : 0) - (right ? 1 : 0);
+    const speedFactor = Math.min(Math.abs(this.speed) / CONFIG.playerMaxSpeed, 1);
+    const maxSteer = CONFIG.playerSteerMax * (1 - speedFactor * 0.5) * (hand ? 1.5 : 1);
+    const targetSteer = steerInput * maxSteer;
+    this.steer += (targetSteer - this.steer) * Math.min(1, dt * 8);
+    const yawRate = (this.speed / CONFIG.wheelBase) * Math.tan(this.steer) * 0.5;
+    this.heading += yawRate * dt;
+
+    this.pos.x += Math.sin(this.heading) * this.speed * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * dt;
+    world.clampPos(this.pos, 1.4);
+    const impact = world.collideCircle(this.pos, 1.4, this.speed);
+    if (impact > 4) {
+      this.speed *= 0.55;
+      this.hull = Math.max(0, this.hull - impact * 0.12);
+      onEvent('crash-wall', { impact });
     }
   }
-  return { x, z };
-}
 
-// Slide a moving car off the building colliders: stop at the wall, lose
-// speed, and report whether the hit was hard enough to count as a crash.
-function collideCarWithBuildings(car, nx, nz, colliders) {
-  let hit = false;
-  for (const c of colliders) {
-    const dx = nx - c.x, dz = nz - c.z, d = Math.hypot(dx, dz);
-    if (d < c.r + 2.2) {
-      hit = true;
-      nx = car.position.x;
-      nz = car.position.z;
-      car.userData.speed *= 0.35;
-    }
+  walk(dt, input, world) {
+    const fwd = input.down('KeyW', 'ArrowUp') ? 1 : 0;
+    const back = input.down('KeyS', 'ArrowDown') ? 1 : 0;
+    const left = input.down('KeyA', 'ArrowLeft') ? 1 : 0;
+    const right = input.down('KeyD', 'ArrowRight') ? 1 : 0;
+    this.heading += ((left ? 1 : 0) - (right ? 1 : 0)) * 2.4 * dt;
+    const move = (fwd - back) * CONFIG.walkSpeed;
+    this.pos.x += Math.sin(this.heading) * move * dt;
+    this.pos.z += Math.cos(this.heading) * move * dt;
+    world.clampPos(this.pos, 0.5);
+    world.collideCircle(this.pos, 0.5, move);
   }
-  return { x: nx, z: nz, hit };
-}
-
-// Soft bounce between the player's car and a traffic car.
-function bounceOffTraffic(car, nx, nz, other) {
-  const dx = nx - other.position.x, dz = nz - other.position.z, d = Math.hypot(dx, dz);
-  if (d >= 4.6 || d <= 0.01) return { x: nx, z: nz };
-  car.userData.speed *= 0.6;
-  other.userData.speed = (other.userData.speed || 0) * 0.5 + car.userData.speed * 0.2;
-  return { x: car.position.x + (dx / d) * 0.6, z: car.position.z + (dz / d) * 0.6 };
-}
-
-// Arcade car physics: throttle, steering that scales with speed, drift on
-// the handbrake, sliding off buildings and a soft bounce off other cars.
-function driveCar(player, car, dt, input, colliders, trafficCars, onCrash) {
-  const spec = CAR_TYPES.find(c => c.id === car.userData.type) || CAR_TYPES[0];
-  let throttle = 0;
-  if (input.up) throttle += 1;
-  if (input.down) throttle -= 0.7;
-  const target = throttle * spec.top;
-  const accel = throttle !== 0 ? spec.accel : 18;
-  car.userData.speed += (target - car.userData.speed) * Math.min(1, accel / spec.top * dt * 2.2);
-  if (input.handbrake) car.userData.speed *= (1 - 1.6 * dt);
-  const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-  const steerAmt = steer * spec.grip * 0.55 * Math.min(1, Math.abs(car.userData.speed) / 12) * Math.sign(car.userData.speed || 1);
-  car.userData.angle += steerAmt * dt * (input.handbrake ? 1.5 : 1);
-  const nf = { x: Math.sin(car.userData.angle), z: Math.cos(car.userData.angle) };
-  let nx = car.position.x + nf.x * car.userData.speed * dt;
-  let nz = car.position.z + nf.z * car.userData.speed * dt;
-  // Building collision: slide along, lose speed, spark a crash event.
-  const bump = collideCarWithBuildings(car, nx, nz, colliders);
-  nx = bump.x; nz = bump.z;
-  if (bump.hit && Math.abs(car.userData.speed) > 8 && onCrash) onCrash(Math.abs(car.userData.speed));
-  // Soft car-car bounce.
-  for (const other of trafficCars) {
-    if (other === car) continue;
-    const b = bounceOffTraffic(car, nx, nz, other);
-    nx = b.x; nz = b.z;
-  }
-  nx = Math.max(-205, Math.min(OPAL.EAST_BEACH + 40, nx));
-  nz = Math.max(-205, Math.min(205, nz));
-  car.position.x = nx;
-  car.position.z = nz;
-  car.rotation.y = -car.userData.angle + Math.PI / 2;
-  // Wheel spin and body lean.
-  const spin = car.userData.speed * dt * 2;
-  for (const w of car.userData.wheels) w.rotation.y += spin;
-  car.rotation.z = -steer * Math.min(0.06, Math.abs(car.userData.speed) * 0.002);
-  player.x = nx;
-  player.z = nz;
-  player.angle = car.userData.angle;
-  return Math.abs(car.userData.speed);
-}
-
-function walkPlayer(player, dt, input, colliders) {
-  const run = input.run && player.runStamina > 0;
-  let spd = run ? 9.5 : 5.2;
-  // Hurt and limping: under 30 health the player moves at 70% speed, so a
-  // shootout escape feels different from a healthy sprint.
-  if (player.health < 30) spd *= 0.7;
-  if (run) player.runStamina = Math.max(0, player.runStamina - dt * 18);
-  else player.runStamina = Math.min(100, player.runStamina + dt * 12);
-  let mx = 0, mz = 0;
-  if (input.up) mz += 1;
-  if (input.down) mz -= 1;
-  if (input.left) mx -= 1;
-  if (input.right) mx += 1;
-  if (mx || mz) {
-    const len = Math.hypot(mx, mz);
-    mx /= len; mz /= len;
-    const targetAngle = Math.atan2(mx, mz);
-    let da = targetAngle - player.angle;
-    while (da > Math.PI) da -= Math.PI * 2;
-    while (da < -Math.PI) da += Math.PI * 2;
-    player.angle += da * Math.min(1, dt * 12);
-    let nx = player.x + Math.sin(player.angle) * spd * dt;
-    let nz = player.z + Math.cos(player.angle) * spd * dt;
-    const c = collideWorld(nx, nz, colliders, 0.8);
-    nx = c.x; nz = c.z;
-    nx = Math.max(-205, Math.min(OPAL.EAST_BEACH + 70, nx));
-    nz = Math.max(-205, Math.min(205, nz));
-    player.x = nx;
-    player.z = nz;
-    player.speed = spd;
-  } else {
-    player.speed = 0;
-  }
-  player.mesh.position.set(player.x, 0, player.z);
-  player.mesh.rotation.y = -player.angle + Math.PI;
-  // Walk swing on the arms.
-  const swing = player.speed > 0 ? Math.sin(performance.now() * 0.012) * 0.5 : 0;
-  if (player.mesh.userData.arms) {
-    player.mesh.userData.arms[0].rotation.x = swing;
-    player.mesh.userData.arms[1].rotation.x = -swing;
-  }
-}
-
-// Third-person chase camera: behind and above, smoothed, never under
-// ground. At speed the field of view opens a little so a fast drive feels
-// fast; it eases back when the car slows down.
-function updateCamera(camera, player, dt, mode) {
-  const dist = player.onFoot ? 7.5 : 11;
-  const height = player.onFoot ? 3.4 : 4.6;
-  const back = { x: Math.sin(player.angle), z: Math.cos(player.angle) };
-  const tx = player.x - back.x * dist;
-  const tz = player.z - back.z * dist;
-  // Exponential smoothing with a dt that is always >= 0: a negative factor
-  // here would throw the camera away from the player instead of toward it.
-  const k = 1 - Math.exp(-Math.max(0, dt) * 8);
-  camera.position.x += (tx - camera.position.x) * k;
-  camera.position.z += (tz - camera.position.z) * k;
-  camera.position.y += (height - camera.position.y) * k;
-  if (camera.position.y < 1.6) camera.position.y = 1.6;
-  const lookY = player.onFoot ? 1.6 : 1.4;
-  camera.lookAt(player.x + back.x * 6, lookY, player.z + back.z * 6);
-  const speed01 = player.onFoot ? 0 : Math.min(1, Math.abs((player.car && player.car.userData.speed) || 0) / 40);
-  const wantFov = 62 + speed01 * 9;
-  if (Math.abs(camera.fov - wantFov) > 0.05) {
-    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 4);
-    camera.updateProjectionMatrix();
-  }
-}
-
-function nearestCar(player, cars, maxDist) {
-  let best = null, bd = maxDist;
-  for (const c of cars) {
-    const d = Math.hypot(c.position.x - player.x, c.position.z - player.z);
-    if (d < bd) { bd = d; best = c; }
-  }
-  return best;
-}
-
-function enterCar(player, car, scene) {
-  player.onFoot = false;
-  player.car = car;
-  car.userData.driven = true;
-  car.userData.speed = car.userData.speed || 0;
-  player.mesh.visible = false;
-  player.x = car.position.x;
-  player.z = car.position.z;
-  player.angle = car.userData.angle || 0;
-}
-
-function exitCar(player, scene) {
-  if (!player.car) return;
-  const car = player.car;
-  car.userData.driven = false;
-  player.onFoot = true;
-  player.car = null;
-  player.mesh.visible = true;
-  const side = { x: Math.cos(player.angle), z: -Math.sin(player.angle) };
-  player.x = car.position.x + side.x * 2.4;
-  player.z = car.position.z + side.z * 2.4;
-  player.mesh.position.set(player.x, 0, player.z);
-}
-
-// Armour absorbs 60% of a hit first; the rest goes to health.
-function damagePlayer(player, amount) {
-  if (player.armour > 0) {
-    const absorbed = Math.min(player.armour, amount * 0.6);
-    player.armour -= absorbed;
-    amount -= absorbed;
-  }
-  player.health -= amount;
-  if (player.health <= 0) { player.health = 0; player.dead = true; }
-  return player.dead;
 }
