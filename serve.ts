@@ -1,42 +1,51 @@
-// OPAL COAST — tiny static file server for local testing. Node stdlib only.
-// Usage: node serve.ts [--root game] [--port 8080]
-// Written fresh, from scratch, in the recorded session (fourth rewrite).
+// OPAL COAST — a tiny static file server for local testing (Node stdlib only).
+// Usage: node serve.ts [--root <dir>] [--port <n>]
+// Defaults: root "game", port 8080. Serves index.html at /.
+
 import { createServer } from 'node:http';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, extname, normalize } from 'node:path';
 
 const args = process.argv.slice(2);
-let root = 'game';
-let port = 8080;
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--root' && args[i + 1]) root = args[++i];
-  else if (args[i] === '--port' && args[i + 1]) port = Number(args[++i]);
+function flag(name, fallback) {
+  const i = args.indexOf(name);
+  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
 }
+const root = flag('--root', 'game');
+const port = Number(flag('--port', '8080'));
 
-const TYPES = {
+const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
 };
 
 const server = createServer((req, res) => {
-  const rawPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  const safe = normalize(rawPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '');
-  const filePath = join(root, safe === '' ? 'index.html' : safe);
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-    res.writeHead(404, { 'content-type': 'text/plain' });
-    res.end('not found');
-    return;
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    let rel = decodeURIComponent(url.pathname);
+    if (rel === '/') rel = '/index.html';
+    const file = join(root, normalize(rel).replace(/^(\.\.[/\\])+/, ''));
+    if (!existsSync(file) || !statSync(file).isFile()) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+    res.end(readFileSync(file));
+  } catch (e) {
+    res.writeHead(500, { 'content-type': 'text/plain' });
+    res.end(String(e));
   }
-  res.writeHead(200, { 'content-type': TYPES[extname(filePath)] || 'application/octet-stream' });
-  res.end(readFileSync(filePath));
 });
 
 server.listen(port, () => {
-  console.log(`OPAL COAST serving ${root} at http://localhost:${port}`);
+  console.log(`OPAL COAST serving ${root} at http://localhost:${port}/`);
 });

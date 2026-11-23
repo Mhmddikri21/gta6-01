@@ -1,56 +1,57 @@
-// OPAL COAST — 10 opal shards hidden around the map, with a pickup chime.
-// Written fresh, from scratch, in the recorded session (fourth rewrite).
-import { CONFIG } from './config.js';
+// OPAL COAST — opal shards: ten glowing stones hidden around the city.
+// Walk or drive through one to pick it up: a two-note chime and $25.
 
-const SHARD_SPOTS = [
-  [84, -24],
-  [114, 0],
-  [-45, -33],
-  [6, 6],
-  [80, 40],
-  [30, -45],
-  [-15, 45],
-  [45, 15],
-  [-60, 20],
-  [15, -60],
-];
+// three.min.js is the classic (UMD) build: it sets window.THREE.
+import { CFG, dist2d } from './config.js';
+import { S, addCash, setHint } from './state.js';
+import { AudioSys } from './audio.js';
 
-export class Collectibles {
-  constructor(scene, state) {
-    this.scene = scene;
-    this.state = state;
-    this.shards = [];
+const shards = [];
+let scene = null;
+
+export const Collectibles = {
+  init(sceneIn) {
+    scene = sceneIn;
     const geo = new THREE.OctahedronGeometry(0.7);
-    for (let i = 0; i < CONFIG.shardCount; i++) {
-      const [x, z] = SHARD_SPOTS[i % SHARD_SPOTS.length];
+    for (const spot of CFG.shardSpots) {
       const mat = new THREE.MeshStandardMaterial({
-        color: 0x66e0ff,
-        emissive: 0x22bbff,
-        emissiveIntensity: 1.4,
+        color: 0x35e0d0,
+        emissive: 0x1fb5a8,
+        emissiveIntensity: 1.6,
         roughness: 0.2,
         metalness: 0.4,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(x, 1.6, z);
-      this.scene.add(mesh);
-      this.shards.push({ mesh, x, z, taken: false, phase: i * 0.9 });
+      mesh.position.set(spot.x, 1.4, spot.z);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      shards.push({ mesh, x: spot.x, z: spot.z, taken: false, phase: Math.random() * Math.PI * 2 });
     }
-  }
+  },
 
-  update(dt, player, onEvent) {
-    const now = this.state.time;
-    for (const s of this.shards) {
+  get count() {
+    return shards.filter((s) => !s.taken).length;
+  },
+  get list() {
+    return shards;
+  },
+
+  update(dt) {
+    if (S.paused) return;
+    for (const s of shards) {
       if (s.taken) continue;
-      s.mesh.rotation.y += dt * 1.6;
-      s.mesh.position.y = 1.6 + Math.sin(now * 2 + s.phase) * 0.35;
-      const dx = player.pos.x - s.x;
-      const dz = player.pos.z - s.z;
-      if (dx * dx + dz * dz < 9) {
+      // Float and spin so they catch the eye.
+      s.phase += dt * 2;
+      s.mesh.position.y = 1.4 + Math.sin(s.phase) * 0.35;
+      s.mesh.rotation.y += dt * 1.5;
+      if (dist2d(S.playerX, S.playerZ, s.x, s.z) < CFG.shardRadius) {
         s.taken = true;
         s.mesh.visible = false;
-        this.state.shardsCollected++;
-        onEvent('shard', { x: s.x, z: s.z });
+        S.shards += 1;
+        addCash(CFG.shardReward);
+        setHint(`Opal shard ${S.shards}/${S.shardsTotal} +$${CFG.shardReward}`, 2.5);
+        AudioSys.chime();
       }
     }
-  }
-}
+  },
+};

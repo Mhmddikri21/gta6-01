@@ -1,224 +1,152 @@
-// OPAL COAST — bootstrap, game loop, camera, garage repair, self-test.
-// Written fresh, from scratch, in the recorded session (fourth rewrite).
-import { CONFIG } from './config.js';
-import { createState, addCash } from './state.js';
-import { Input } from './input.js';
+// OPAL COAST — entry point: builds the renderer, wires every system,
+// runs the game loop, and hosts the headless self-test (?selftest=1)
+// and the staged screenshot scenes (?shot=N).
+
+// three.min.js is the classic (UMD) build: it sets window.THREE, so this
+// module uses the global instead of importing it.
+import { CFG } from './config.js';
+import { S, resetGame, tickTimers } from './state.js';
+import { Input, bindInput } from './input.js';
 import { AudioSys } from './audio.js';
-import { World } from './world.js';
+import { buildWorld, animateWorld } from './world.js';
 import { Player } from './player.js';
 import { Traffic } from './traffic.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
 import { Missions } from './missions.js';
 import { Collectibles } from './collectibles.js';
+import { Shots } from './shots.js';
 import { UI } from './ui.js';
-import { stageShot } from './shots.js';
 
-const params = new URLSearchParams(location.search);
-const shot = Number(params.get('shot') || 0);
-const selftest = params.get('selftest') === '1';
-const autostart = params.get('autostart') === '1' || shot > 0 || selftest;
+const params = new URLSearchParams(window.location.search);
+const isSelfTest = params.has('selftest');
+const shotParam = params.get('shot');
+const shotNum = shotParam ? parseInt(shotParam, 10) : 0;
 
-const state = createState();
-const input = new Input();
-const audio = new AudioSys();
+let renderer = null;
+let scene = null;
+let camera = null;
+let clockLast = 0;
+let framesRun = 0;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.getElementById('app').appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87b5d6);
-scene.fog = new THREE.Fog(0x87b5d6, 120, 260);
-
-const camera = new THREE.PerspectiveCamera(CONFIG.cameraFovMin, window.innerWidth / window.innerHeight, 0.1, 600);
-camera.position.set(-30, 6, 58);
-
-const sun = new THREE.DirectionalLight(0xfff2d8, 2.2);
-sun.position.set(60, 90, 40);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.left = -100;
-sun.shadow.camera.right = 100;
-sun.shadow.camera.top = 100;
-sun.shadow.camera.bottom = -100;
-scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.9));
-
-const world = new World(scene);
-const player = new Player(scene, state);
-const traffic = new Traffic(scene, state);
-const peds = new Peds(scene, state);
-const police = new Police(scene, state);
-const missions = new Missions(scene, state);
-const collectibles = new Collectibles(scene, state);
-const ui = new UI(state);
-
-const ctx = { state, scene, camera, renderer, world, player, traffic, peds, police, missions, collectibles, ui, input, audio };
-window.__game = ctx;
-let engineWarned = false;
-
-function onEvent(type, data) {
-  if (type === 'traffic-hit') {
-    police.addHeat(CONFIG.heatPerCarHit);
-    audio.thud();
-    ui.toast('Traffic collision — the OCPD noticed');
-  } else if (type === 'ped-hit') {
-    police.addHeat(CONFIG.heatPerPedHit);
-    audio.thud();
-    ui.toast('Pedestrian down — wanted level up');
-  } else if (type === 'near-miss') {
-    addCash(state, CONFIG.nearMissReward);
-    audio.blip(990);
-    ui.toast(`NEAR MISS +$${CONFIG.nearMissReward}`);
-  } else if (type === 'rammed') {
-    audio.thud();
-    ui.toast('Interceptor rammed you');
-  } else if (type === 'shard') {
-    addCash(state, CONFIG.shardReward);
-    audio.chime();
-    ui.toast(`OPAL SHARD +$${CONFIG.shardReward} (${state.shardsCollected}/10)`);
-  } else if (type === 'mission-complete') {
-    addCash(state, data.reward);
-    audio.chime();
-    ui.toast(`Job done — +$${data.reward}`);
-  } else if (type === 'checkpoint') {
-    addCash(state, data.reward);
-    audio.blip(1200);
-    ui.toast(`Checkpoint ${data.index + 1}/5 +$${data.reward}`);
-  } else if (type === 'tanker-hit') {
-    audio.thud();
-    ui.toast(`Tanker hull ${Math.round(data.hull)}%`);
-  } else if (type === 'hull-warning') {
-    audio.blip(220);
-    ui.toast('HULL CRITICAL — protect the tanker!');
-  } else if (type === 'tanker-lost') {
-    ui.toast('Tanker lost — run the escort again');
-  } else if (type === 'crash-wall') {
-    audio.thud();
-  }
-}
-
-function updateCamera(dt) {
-  const anchor = player.inCar ? player.carGroup.position : player.walkerGroup.position;
-  const backX = -Math.sin(player.heading);
-  const backZ = -Math.cos(player.heading);
-  const dist = player.inCar ? 9.5 : 5.5;
-  const height = player.inCar ? 4.2 : 2.8;
-  const desired = new THREE.Vector3(
-    anchor.x + backX * dist,
-    height,
-    anchor.z + backZ * dist
-  );
-  // Snap when far away (staging a shot, entering/exit) instead of
-  // sweeping across the whole city; lerp smoothly the rest of the time.
-  if (camera.position.distanceTo(desired) > 25) {
-    camera.position.copy(desired);
-  } else {
-    camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
-  }
-  camera.lookAt(anchor.x, anchor.y + 1.2, anchor.z);
-  const speedNorm = Math.min(Math.abs(player.speed) / CONFIG.playerMaxSpeed, 1);
-  const fov = CONFIG.cameraFovMin + (CONFIG.cameraFovMax - CONFIG.cameraFovMin) * speedNorm;
-  if (Math.abs(camera.fov - fov) > 0.05) {
-    camera.fov = fov;
-    camera.updateProjectionMatrix();
-  }
-}
-
-function repairAtGarage(dt) {
-  if (!player.inCar || player.hull >= 100) return;
-  const dx = player.pos.x - world.garage.x;
-  const dz = player.pos.z - world.garage.z;
-  if (dx * dx + dz * dz < world.garage.r * world.garage.r && Math.abs(player.speed) < 1) {
-    player.hull = Math.min(100, player.hull + CONFIG.garageRepairRate * dt);
-    if (world.garageRing) {
-      world.garageRing.material.opacity = 0.4 + Math.sin(state.time * 6) * 0.25;
-    }
-  }
-}
-
+// One fixed simulation step, shared by the live loop and the self-test.
 function step(dt) {
-  state.time += dt;
-  player.update(dt, input, world, onEvent);
-  traffic.update(dt, player, onEvent);
-  peds.update(dt, player, onEvent);
-  police.update(dt, player, onEvent);
-  missions.update(dt, ctx, onEvent);
-  collectibles.update(dt, player, onEvent);
-  repairAtGarage(dt);
-  if (player.hull <= 0 && !engineWarned) {
-    engineWarned = true;
-    ui.toast('ENGINE BLOWN — limp to Juno\u2019s garage');
+  S.time += dt;
+  tickTimers(dt);
+  Player.update(dt);
+  Traffic.update(dt);
+  Peds.update(dt);
+  Police.update(dt);
+  Missions.update(dt);
+  Collectibles.update(dt);
+  animateWorld(scene, S.time);
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, clockLast ? (now - clockLast) / 1000 : 0.016);
+  clockLast = now;
+  if (!S.paused && S.started) {
+    step(dt);
+    framesRun += 1;
   }
-  if (player.hull > 20) engineWarned = false;
-  audio.setEngine(Math.min(Math.abs(player.speed) / CONFIG.playerMaxSpeed, 1), state.muted);
-  audio.sirenTick(dt, state.stars);
-  updateCamera(dt);
-  ui.update(player, missions, police, traffic, collectibles, world);
-  input.endFrame();
-}
-
-function runSelfTest() {
-  state.started = true;
-  missions.setMission('m2');
-  police.forceStars(4);
-  for (let i = 0; i < 30; i++) {
-    const dt = 1 / 60;
-    state.time += dt;
-    player.autoDrive(dt, world);
-    traffic.update(dt, player, () => {});
-    peds.update(dt, player, () => {});
-    police.update(dt, player, () => {});
-    missions.update(dt, ctx, () => {});
-    collectibles.update(dt, player, () => {});
-  }
-  console.log(
-    `SELFTEST OK frames=30 traffic=${traffic.cars.length} peds=${peds.walkers.length} wanted=${state.stars} mission=${state.missionId}`
-  );
-}
-
-const startScreen = document.getElementById('start-screen');
-const pauseScreen = document.getElementById('pause-screen');
-const startBtn = document.getElementById('start-btn');
-
-function beginPlay() {
-  audio.ensure();
-  state.started = true;
-  if (startScreen) startScreen.classList.add('hidden');
-}
-
-if (startBtn) startBtn.addEventListener('click', beginPlay);
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-const clock = new THREE.Clock();
-function loop() {
-  requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (input.hit('Escape', 'KeyP') && state.started) {
-    if (input.hit('KeyP')) {
-      state.photoMode = !state.photoMode;
-      document.body.classList.toggle('photo', state.photoMode);
-    } else {
-      state.paused = !state.paused;
-      if (pauseScreen) pauseScreen.classList.toggle('hidden', !state.paused);
+  if (Input.pressed('KeyP') || Input.pressed('Escape')) {
+    if (S.started && !S.over) {
+      S.paused = !S.paused;
+      if (S.paused) AudioSys.quiet();
     }
   }
-  if (input.hit('KeyM')) state.muted = !state.muted;
-  if (state.started && !state.paused) step(dt);
-  else input.endFrame();
+  if (Input.pressed('KeyF')) {
+    S.photo = !S.photo;
+  }
+  if (Input.pressed('MouseClick') && !S.started) {
+    AudioSys.ensure();
+    S.started = true;
+  }
+  if (S.over && Input.pressed('Enter')) {
+    Police.resetAfterBust();
+    Player.placeCar(CFG.places.garage.x, CFG.places.garage.z + 8, 0, 0);
+    S.heat = 0;
+    S.wanted = 0;
+  }
+  UI.update();
+  Input.endFrame();
   renderer.render(scene, camera);
 }
 
-if (shot > 0) stageShot(shot, ctx);
-if (selftest) runSelfTest();
-if (autostart) beginPlay();
-loop();
+// Headless self-test: stage a four-star m2 chase, run 30 fixed steps,
+// and log one line with the real live counts.
+function runSelfTest() {
+  S.started = true;
+  Missions.forceMission('m2');
+  S.heat = 100;
+  S.wanted = 4;
+  S.lastCrimeAt = S.time;
+  Player.placeCar(0, -20, 0, 28);
+  Police.stage(3, 0, -20);
+  for (let i = 0; i < 30; i++) step(1 / 60);
+  framesRun = 30;
+  renderer.render(scene, camera);
+  console.log(
+    `SELFTEST OK frames=${framesRun} traffic=${Traffic.count} peds=${Peds.count} wanted=${S.wanted} mission=${S.mission.id}`,
+  );
+  document.title = 'SELFTEST OK';
+  window.__selftestDone = true;
+}
+
+function boot() {
+  resetGame();
+  bindInput();
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(CFG.fovBase, window.innerWidth / window.innerHeight, 0.1, 900);
+  camera.position.set(0, 5, -12);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.getElementById('game').appendChild(renderer.domElement);
+
+  buildWorld(scene);
+  Player.init(scene, camera);
+  Traffic.init(scene);
+  Peds.init(scene);
+  Police.init(scene);
+  Missions.init(scene);
+  Collectibles.init(scene);
+  UI.init({ traffic: Traffic, peds: Peds, police: Police, missions: Missions, collectibles: Collectibles });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Screenshot staging runs the game live behind a fixed scene.
+  if (shotNum >= 1 && shotNum <= 4) {
+    Shots.stage(shotNum, {
+      player: Player,
+      police: Police,
+      missions: Missions,
+      traffic: Traffic,
+      peds: Peds,
+      collectibles: Collectibles,
+    });
+    // Let a few frames settle so the camera eases into place, then snap
+    // it exactly onto its target so the shot is never caught mid-ease.
+    for (let i = 0; i < 10; i++) step(1 / 60);
+    Player.snapCamera();
+    renderer.render(scene, camera);
+    window.__shotReady = true;
+  }
+
+  if (isSelfTest) {
+    runSelfTest();
+    return;
+  }
+
+  requestAnimationFrame(frame);
+}
+
+boot();
