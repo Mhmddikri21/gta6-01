@@ -1,6 +1,10 @@
 # OPAL COAST
 
-An original open-world crime game built for the make.fun GTA 6 bounty. Nothing
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
+An original open-world crime game built for the [make.fun GTA 6 bounty](https://make.fun/bounty/gta6-01). Nothing
 here comes from Rockstar or any other commercial game: the city, the crew, the
 story and the art are all our own.
 
