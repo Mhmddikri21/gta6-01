@@ -39,7 +39,8 @@ function bootOpalCoast() {
     scene, camera, renderer, world, player, audio, police, missions,
     collectibles, trafficCars, pedestrians, timeOfDay: 17.4, paused: false, started: false,
     frames: 0, errors: [], startTime: performance.now(), rng, selftest,
-    hud: null, input: { up: false, down: false, left: false, right: false, run: false, handbrake: false },
+    hud: null, nearMissTimer: 0,
+    input: { up: false, down: false, left: false, right: false, run: false, handbrake: false },
   };
   game.save = function () { saveGame(game); };
   game.hud = createHud(game);
@@ -144,6 +145,7 @@ function stepGame(game, dt, now) {
   game.frames += 1;
   game.timeOfDay += dt * 0.004;
   if (game.timeOfDay > 19.2) game.timeOfDay = 16.5;
+  if (game.nearMissTimer > 0) game.nearMissTimer -= dt;
 
   // Player: on foot or behind the wheel.
   if (player.onFoot) walkPlayer(player, dt, game.input, world.colliders);
@@ -159,6 +161,20 @@ function stepGame(game, dt, now) {
       showBanner(missions, 'CAR WRECKED', 'Your ride is scrap. Find another one.');
       addHeat(police, 6);
       exitCar(player, game.scene);
+    }
+    // Near miss: threading past a traffic car at speed without touching
+    // it pays $10. Each car pays at most once every 4 seconds.
+    if (spd > 20) {
+      for (const other of game.trafficCars) {
+        if (other === player.car || other.userData.driven) continue;
+        const d = Math.hypot(other.position.x - player.x, other.position.z - player.z);
+        if (d < 4.6 && d >= 3.2 && now / 1000 - (other.userData.nearMissAt || -10) > 4) {
+          other.userData.nearMissAt = now / 1000;
+          player.cash += 10;
+          game.nearMissTimer = 2.5;
+          audio.blip(1040);
+        }
+      }
     }
   }
   // Traffic and pedestrians.

@@ -31,6 +31,7 @@ function spawnTrafficCar(scene, rng, excludeNear) {
   car.userData.cruise = car.userData.speed;
   car.userData.vertical = vertical;
   car.userData.lane = lane;
+  car.userData.nearMissAt = -10;
   car.rotation.y = -angle + Math.PI / 2;
   scene.add(car);
   return car;

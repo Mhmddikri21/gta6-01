@@ -173,7 +173,9 @@ function renderStatus(game) {
   if (rd) rd.textContent = '♪ ' + RADIO[game.audio.radioIndex % RADIO.length].name + ' — "' + RADIO[game.audio.radioIndex % RADIO.length].tag + '"';
   const hint = el('hint');
   if (hint) {
-    if (game.collectibles && game.collectibles.garageReady) {
+    if (game.nearMissTimer > 0) {
+      hint.textContent = 'NEAR MISS +$10 — THREAD THE NEEDLE, SLICK';
+    } else if (game.collectibles && game.collectibles.garageReady) {
       hint.textContent = 'G — REPAIR AT JUNO\'S GARAGE ($100) · H — PHOTO MODE';
     } else if (p.onFoot) {
       const car = nearestCar(p, game.trafficCars, 5);

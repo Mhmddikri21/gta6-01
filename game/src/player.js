@@ -152,7 +152,9 @@ function walkPlayer(player, dt, input, colliders) {
   }
 }
 
-// Third-person chase camera: behind and above, smoothed, never under ground.
+// Third-person chase camera: behind and above, smoothed, never under
+// ground. At speed the field of view opens a little so a fast drive feels
+// fast; it eases back when the car slows down.
 function updateCamera(camera, player, dt, mode) {
   const dist = player.onFoot ? 7.5 : 11;
   const height = player.onFoot ? 3.4 : 4.6;
@@ -168,6 +170,12 @@ function updateCamera(camera, player, dt, mode) {
   if (camera.position.y < 1.6) camera.position.y = 1.6;
   const lookY = player.onFoot ? 1.6 : 1.4;
   camera.lookAt(player.x + back.x * 6, lookY, player.z + back.z * 6);
+  const speed01 = player.onFoot ? 0 : Math.min(1, Math.abs((player.car && player.car.userData.speed) || 0) / 40);
+  const wantFov = 62 + speed01 * 9;
+  if (Math.abs(camera.fov - wantFov) > 0.05) {
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 4);
+    camera.updateProjectionMatrix();
+  }
 }
 
 function nearestCar(player, cars, maxDist) {

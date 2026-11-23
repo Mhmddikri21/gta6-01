@@ -47,7 +47,8 @@ function buildWorld(scene, rng) {
   scene.add(sun);
   world.sun = sun;
 
-  // Gradient sky dome (big back-side sphere with a tiny shader) and a sun disc.
+  // Gradient sky dome (a big back-side sphere with a tiny shader) plus a
+  // low sun disc hanging over the ocean.
   const skyGeo = new THREE.SphereGeometry(600, 24, 16);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
@@ -91,7 +92,7 @@ function buildWorld(scene, rng) {
   world.ocean = ocean;
 
   // Roads: one strip per grid line in each direction, centre dashes, and a
-  // wide coastal boulevard along the beach.
+  // wide coastal boulevard running along the beach.
   const roadMat = new THREE.MeshLambertMaterial({ color: 0x414958 });
   const dashMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
   const half = OPAL.BLOCK * OPAL.GRID / 2 + OPAL.ROAD_HALF;

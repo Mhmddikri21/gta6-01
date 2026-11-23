@@ -50,9 +50,9 @@ function stageChase(game) {
   game.missions.targetCar.userData.angle = Math.PI;
   game.missions.targetCar.userData.speed = 14;
   // OCPD interceptors flanking the player, in frame ahead of the camera.
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const pc = spawnPoliceCar(game.scene, p, Math.random);
-    pc.position.set(152 + i * 30, 0, 30 - i * 8);
+    pc.position.set(152 + i * 22, 0, 30 - i * 8);
     pc.userData.angle = Math.PI;
     game.police.cars.push(pc);
   }

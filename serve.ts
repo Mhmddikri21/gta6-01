@@ -1,17 +1,21 @@
 // A tiny static server for game/ (Node 22, standard library only), so an
 // entry can be played locally without a build step: `node serve.ts` serves
-// game/ on http://localhost:8080. Rewritten in the recorded session of
+// game/ on http://localhost:8080, or `node serve.ts --root out/game` to
+// play the handed-in build instead. Rewritten in the recorded session of
 // 2026-11-24 alongside the rest of the entry. It sends the MIME types a
-// browser game needs, refuses any path outside game/, and otherwise does
-// nothing clever: this is a development convenience, not a web server for
-// the internet.
+// browser game needs, refuses any path outside the served root, and
+// otherwise does nothing clever: this is a development convenience, not a
+// web server for the internet.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
 const args = process.argv.slice(2);
+const rootIndex = args.indexOf('--root');
+const root = rootIndex === -1
+  ? resolve(fileURLToPath(new URL('./game', import.meta.url)))
+  : resolve(args[rootIndex + 1] || 'game');
 const portIndex = args.indexOf('--port');
 const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
 const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
@@ -71,5 +75,5 @@ createServer((request, response) => {
   });
   createReadStream(file).pipe(response);
 }).listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
+  console.log(`serving ${root} on http://localhost:${port}`);
 });

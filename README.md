@@ -6,7 +6,7 @@
 
 An entry for [Make GTA 6 on make.fun](https://make.fun/c/gta6-01): a complete,
 original open-world crime game that plays offline in a desktop browser from
-static files — no network, no build step. Rebuilt 2026-11-24 in a recorded
+static files — no network, no build step. Rewritten 2026-11-24 in a recorded
 session (every counted file deleted and written fresh).
 
 ## The game
@@ -27,8 +27,9 @@ and outrun rival Nacho Reyes down the coastal highway.
 - **Missions and a story** — six staged jobs with dialogue, objective beacons
   and rewards, plus cash, respect ranks, a weapon wheel and a garage.
 - **Side systems** — ten opal shards hidden around the city (find them all
-  for a bonus), garage repairs at Juno's workshop (G), and a photo mode (H)
-  that hides the interface for a clean shot of the coast.
+  for a bonus), garage repairs at Juno's workshop (G), a near-miss bonus for
+  threading traffic at speed (+$10), and a photo mode (H) that hides the
+  interface for a clean shot of the coast.
 - **A HUD with a minimap** — mission card, OCPD dispatch list, health and
   armour, crew panel, speed and car condition, district name, clock and a
   three-station synth radio (WebAudio, no audio files).

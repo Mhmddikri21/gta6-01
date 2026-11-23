@@ -71,7 +71,7 @@ function updateCollectibles(sys, game, dt) {
       sys.found += 1;
       p.cash += OPAL_REWARD_CASH;
       p.rp += OPAL_REWARD_RP;
-      game.audio.blip(1180);
+      game.audio.pickup();
       showBanner(game.missions, 'OPAL SHARD ' + sys.found + '/' + sys.total,
         s.note + ' · +$' + OPAL_REWARD_CASH + ' · +' + OPAL_REWARD_RP + ' respect');
       if (sys.found >= sys.total && !sys.bonusPaid) {

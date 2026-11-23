@@ -30,6 +30,23 @@ function createAudio() {
     o.start(t);
     o.stop(t + 0.2);
   };
+  audio.pickup = function () {
+    // Two-note ascending chime for picking up an opal shard.
+    if (!audio.ctx || audio.muted) return;
+    const t = audio.ctx.currentTime;
+    [880, 1318].forEach(function (freq, i) {
+      const o = audio.ctx.createOscillator(), g = audio.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      const start = t + i * 0.09;
+      g.gain.setValueAtTime(0.14, start);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      o.connect(g);
+      g.connect(audio.master);
+      o.start(start);
+      o.stop(start + 0.24);
+    });
+  };
   audio.shot = function () {
     if (!audio.ctx || audio.muted) return;
     const t = audio.ctx.currentTime;

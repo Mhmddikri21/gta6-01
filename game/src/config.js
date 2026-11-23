@@ -1,14 +1,15 @@
 // OPAL COAST — shared configuration.
-// The single place every other file reads numbers, names and story from:
-// the city layout, the crew, the ranks, the weapons, the cars, the six
-// jobs, the districts and the radio stations. No rendering, no DOM here.
+// Every number, name and story beat lives here so the other modules only
+// read constants: the city grid, the crew, the respect ranks, the weapons,
+// the cars, the six jobs, the districts and the radio stations. This file
+// renders nothing and touches no DOM.
 
 const OPAL = {
   title: 'OPAL COAST',
   subtitle: 'a sun-soaked open-world crime story',
   city: 'Opal Coast',
-  // The city is a road grid on the coast. Roads repeat every BLOCK metres;
-  // east of EAST_BEACH the sand starts, then the ocean. The marina is
+  // The city is a road grid by the sea. Roads repeat every BLOCK metres;
+  // east of EAST_BEACH the sand starts, then the ocean. The marina sits
   // north, the desal plant west, the docks south-west.
   BLOCK: 46,
   GRID: 7,               // 7 x 7 blocks, centred on (0, 0)
@@ -16,7 +17,7 @@ const OPAL = {
   EAST_BEACH: 175,       // x beyond this is sand, then water
   WORLD_R: 210,          // playable radius, soft-clamped
   SEA_LEVEL: 0.4,
-  GARAGE: { x: -20, z: -20 }, // Juno's garage: safehouse and respawn
+  GARAGE: { x: -20, z: -20 }, // Juno's garage: safehouse and respawn point
   SUNSET: { skyTop: 0x2e4a7a, skyMid: 0xf2a35e, skyLow: 0xffd9a0, fog: 0xf7b06a, sun: 0xffd27a },
   DAY:    { skyTop: 0x3f8fd2, skyMid: 0x9fd8ef, skyLow: 0xffe9b0, fog: 0xcfe8f2, sun: 0xfff2c0 },
 };
@@ -33,7 +34,7 @@ const CREW = {
   villain:  { name: 'The Hydration Union', role: 'Owns the water grid', color: '#38bdf8' },
 };
 
-// Respect ranks: earn RP from jobs and the rank name on the HUD changes.
+// Respect ranks: earn RP from jobs and side work and the HUD rank changes.
 const RANKS = [
   { name: 'Nobody', rp: 0 },
   { name: 'Dock Hand', rp: 250 },
@@ -44,7 +45,7 @@ const RANKS = [
 ];
 
 // Weapons. Fists and the pistol are yours from the start; the SMG and the
-// rifle unlock when your respect is high enough.
+// rifle unlock once your respect is high enough.
 const WEAPONS = [
   { id: 'fists',  name: 'FISTS',   ammo: Infinity, damage: 12, range: 2.2, rate: 0.45, icon: '1' },
   { id: 'pistol', name: 'P9',      ammo: 84,       damage: 26, range: 42,  rate: 0.28, icon: '2' },
@@ -52,9 +53,9 @@ const WEAPONS = [
   { id: 'rifle',  name: 'GATOR',   ammo: 60,       damage: 55, range: 70,  rate: 0.6,  icon: '4', locked: true, lockRp: 1500 },
 ];
 
-// Cars. top is top speed in m/s, accel the approach rate, grip the steering
-// response. Traffic only spawns the first four types; the police car and
-// the tanker are special.
+// Cars. top is top speed in m/s, accel the approach rate, grip the
+// steering response. Traffic only spawns the first four types; the police
+// car and the tanker are special.
 const CAR_TYPES = [
   { id: 'sedan',  name: 'Calyx Sprint GT',  top: 34, accel: 16, grip: 2.6, color: 0xd94f3d, price: 0 },
   { id: 'coupe',  name: 'Rukan Pelo GT',    top: 42, accel: 20, grip: 2.9, color: 0xf97316, price: 1200 },
@@ -131,7 +132,7 @@ const RADIO = [
   { name: 'Union Static 88.4', tag: 'Pirate Broadcast', bpm: 128, root: 247, mode: 'minor' },
 ];
 
-// Deterministic RNG so the city layout is the same every load.
+// Deterministic RNG so the city layout is the same on every load.
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {

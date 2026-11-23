@@ -21,7 +21,7 @@ function createMissions(scene) {
     collectibles: [], checkpoints: [], raceRival: null,
     timer: 0, hiddenTimer: 0, collected: 0, hits: 0,
     banner: '', bannerTimer: 0, dialogue: '', dialogueTimer: 0,
-    cargoHp: 100, raceCp: 0, raceTime: 0,
+    cargoHp: 100, raceCp: 0, raceTime: 0, hullWarned: false,
   };
 }
 
@@ -38,6 +38,7 @@ function startMission(m, game) {
   m.raceCp = 0;
   m.raceTime = 0;
   m.cargoHp = 100;
+  m.hullWarned = false;
   m.target = { x: def.target.x, z: def.target.z };
   m.beacon.visible = true;
   m.ring.visible = true;
@@ -184,6 +185,10 @@ const KIND_HANDLERS = {
     if (m.targetCar.userData.hp < 60 && m.stage === 0) {
       m.stage = 1;
       showBanner(m, def.job + ' · ' + def.title, def.stages[1] + ' — hull ' + Math.max(0, Math.round(m.targetCar.userData.hp)) + '%');
+    }
+    if (m.targetCar.userData.hp < 30 && m.stage === 1 && !m.hullWarned) {
+      m.hullWarned = true;
+      showBanner(m, def.job + ' · ' + def.title, 'Hull critical — one more hit and she goes down');
     }
   },
   evade(m, game, dt, distTarget) {

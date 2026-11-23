@@ -126,11 +126,11 @@ function updatePolice(police, scene, dt, player, rng, onBusted) {
     }
   }
   // Heat cools only while no police car is close (broken line of sight):
-  // hide for 9 seconds, then the stars start falling.
+  // hide for 8 seconds, then the stars start falling.
   const nearest = nearestPursuit(police, player);
   if (stars > 0 && nearest > 42 && (!police.heli || stars < 3)) {
     police.cooldown += dt;
-    if (police.cooldown > 9) {
+    if (police.cooldown > 8) {
       police.heat = Math.max(0, police.heat - dt * 14);
       if (police.heat <= 0) police.cooldown = 0;
     }
