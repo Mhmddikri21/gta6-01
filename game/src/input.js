@@ -1,52 +1,59 @@
-// OPAL COAST — keyboard and mouse input.
-// A single shared key map; gameplay code asks isDown('KeyW') and the like.
-// Also exposes a tiny edge detector (pressed) for one-shot actions.
+// OPAL COAST — keyboard input with per-frame edge detection.
+// WASD / arrows drive, Space handbrake, E enter-exit / interact,
+// P photo mode, Esc pause, M mute, R repair at the garage.
 
-const keys = new Set();
-const pressedKeys = new Set();
+export class Input {
+  constructor() {
+    this.keys = new Set();
+    this.edge = new Set();
+    this.attached = false;
+  }
 
-export const Input = {
-  // True while the key is held.
-  isDown(code) {
-    return keys.has(code);
-  },
-  // True only on the frame the key went down.
+  attach() {
+    if (this.attached) return;
+    this.attached = true;
+    window.addEventListener('keydown', (e) => {
+      if (!e.repeat) this.edge.add(e.code);
+      this.keys.add(e.code);
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+    });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+    });
+  }
+
+  down(code) {
+    return this.keys.has(code);
+  }
+
   pressed(code) {
-    return pressedKeys.has(code);
-  },
-  // Driving helpers, so gameplay reads intent, not raw codes.
-  get throttle() {
-    return (this.isDown('KeyW') || this.isDown('ArrowUp') ? 1 : 0)
-      - (this.isDown('KeyS') || this.isDown('ArrowDown') ? 1 : 0);
-  },
-  get steer() {
-    return (this.isDown('KeyA') || this.isDown('ArrowLeft') ? 1 : 0)
-      - (this.isDown('KeyD') || this.isDown('ArrowRight') ? 1 : 0);
-  },
-  get handbrake() {
-    return this.isDown('Space');
-  },
-  // Clear the edge set at the end of each frame.
-  endFrame() {
-    pressedKeys.clear();
-  },
-};
+    return this.edge.has(code);
+  }
 
-export function bindInput() {
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') e.preventDefault();
-    if (!e.repeat) pressedKeys.add(e.code);
-    keys.add(e.code);
-  });
-  window.addEventListener('keyup', (e) => {
-    keys.delete(e.code);
-  });
-  window.addEventListener('blur', () => {
-    keys.clear();
-    pressedKeys.clear();
-  });
-  // Clicking anywhere counts as the "start" gesture for the start screen.
-  window.addEventListener('mousedown', () => {
-    pressedKeys.add('MouseClick');
-  });
+  endFrame() {
+    this.edge.clear();
+  }
+
+  // -1 reverse .. +1 forward.
+  get throttle() {
+    const f = this.down('KeyW') || this.down('ArrowUp') ? 1 : 0;
+    const r = this.down('KeyS') || this.down('ArrowDown') ? 1 : 0;
+    return f - r;
+  }
+
+  // +1 is left (heading grows), -1 is right.
+  get steer() {
+    const l = this.down('KeyA') || this.down('ArrowLeft') ? 1 : 0;
+    const r = this.down('KeyD') || this.down('ArrowRight') ? 1 : 0;
+    return l - r;
+  }
+
+  get handbrake() {
+    return this.down('Space');
+  }
 }

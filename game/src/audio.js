@@ -1,138 +1,111 @@
-// OPAL COAST — synthesized sound, no audio files.
-// Everything is WebAudio oscillators and filtered noise, built lazily on
-// the first user gesture so headless runs (self-test, screenshots) stay
-// silent and never throw.
+// OPAL COAST — all sound is synthesized with WebAudio. No audio files.
+// The context is created lazily on the first user gesture (start click).
 
-let ctx = null;
-let engineOsc = null;
-let engineGain = null;
-let sirenTimer = null;
+export class AudioSys {
+  constructor() {
+    this.ctx = null;
+    this.muted = false;
+    this.engineOsc = null;
+    this.engineGain = null;
+    this.sirenTimer = null;
+    this.sirenOn = false;
+  }
 
-export const AudioSys = {
-  // Call from the first click / keypress. Safe to call repeatedly.
   ensure() {
-    if (ctx) {
-      if (ctx.state === 'suspended') ctx.resume();
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
       return;
     }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      ctx = new AC();
+      this.ctx = new AC();
+      this.engineOsc = this.ctx.createOscillator();
+      this.engineOsc.type = 'sawtooth';
+      this.engineOsc.frequency.value = 55;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 420;
+      this.engineGain = this.ctx.createGain();
+      this.engineGain.gain.value = 0;
+      this.engineOsc.connect(filter);
+      filter.connect(this.engineGain);
+      this.engineGain.connect(this.ctx.destination);
+      this.engineOsc.start();
     } catch (e) {
-      ctx = null;
+      this.ctx = null;
     }
-  },
+  }
 
-  // A short sine blip, used for near-misses and UI ticks.
-  blip(freq = 880, dur = 0.09, vol = 0.12) {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(freq, t);
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g).connect(ctx.destination);
-    o.start(t);
-    o.stop(t + dur + 0.02);
-  },
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.engineGain) this.engineGain.gain.value = 0;
+    return this.muted;
+  }
 
-  // The opal shard pickup: two ascending notes, E5 then A5.
+  // speedNorm 0..1 while driving; 0 silences the engine.
+  engine(speedNorm) {
+    if (!this.ctx || this.muted || !this.engineGain) return;
+    const t = this.ctx.currentTime;
+    this.engineGain.gain.setTargetAtTime(0.02 + speedNorm * 0.05, t, 0.1);
+    this.engineOsc.frequency.setTargetAtTime(55 + speedNorm * 130, t, 0.1);
+  }
+
+  tone(freq, dur, type = 'sine', vol = 0.12, when = 0) {
+    if (!this.ctx || this.muted) return;
+    try {
+      const t0 = this.ctx.currentTime + when;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g);
+      g.connect(this.ctx.destination);
+      o.start(t0);
+      o.stop(t0 + dur + 0.05);
+    } catch (e) {
+      /* audio is cosmetic */
+    }
+  }
+
+  // Near-miss blip.
+  blip() {
+    this.tone(1180, 0.09, 'square', 0.06);
+  }
+
+  // Opal pickup: two ascending notes.
   chime() {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    [659.25, 880.0].forEach((freq, i) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(freq, t + i * 0.12);
-      g.gain.setValueAtTime(0.0001, t + i * 0.12);
-      g.gain.exponentialRampToValueAtTime(0.18, t + i * 0.12 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.5);
-      o.connect(g).connect(ctx.destination);
-      o.start(t + i * 0.12);
-      o.stop(t + i * 0.12 + 0.55);
-    });
-  },
+    this.tone(660, 0.16, 'sine', 0.14);
+    this.tone(990, 0.28, 'sine', 0.14, 0.11);
+  }
 
-  // A dull thud for collisions, made from filtered noise.
-  crash(strength = 1) {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    const dur = 0.18;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 420;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.25 * strength, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f).connect(g).connect(ctx.destination);
-    src.start(t);
-  },
+  crash() {
+    this.tone(90, 0.25, 'sawtooth', 0.2);
+    this.tone(55, 0.3, 'square', 0.12, 0.02);
+  }
 
-  // A rising alarm for the hull-critical warning.
   alarm() {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    [440, 554, 659].forEach((freq, i) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'square';
-      o.frequency.setValueAtTime(freq, t + i * 0.14);
-      g.gain.setValueAtTime(0.06, t + i * 0.14);
-      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.14 + 0.16);
-      o.connect(g).connect(ctx.destination);
-      o.start(t + i * 0.14);
-      o.stop(t + i * 0.14 + 0.18);
-    });
-  },
+    this.tone(520, 0.18, 'square', 0.08);
+    this.tone(520, 0.18, 'square', 0.08, 0.22);
+  }
 
-  // Engine hum: a sawtooth whose pitch follows speed. Call every frame.
-  engine(speed, topSpeed) {
-    if (!ctx) return;
-    if (!engineOsc) {
-      engineOsc = ctx.createOscillator();
-      engineOsc.type = 'sawtooth';
-      engineGain = ctx.createGain();
-      engineGain.gain.value = 0;
-      const f = ctx.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = 900;
-      engineOsc.connect(f).connect(engineGain).connect(ctx.destination);
-      engineOsc.start();
-    }
-    const ratio = Math.min(1, Math.abs(speed) / topSpeed);
-    engineOsc.frequency.setTargetAtTime(55 + ratio * 165, ctx.currentTime, 0.08);
-    engineGain.gain.setTargetAtTime(0.02 + ratio * 0.045, ctx.currentTime, 0.1);
-  },
-
-  // Two-tone police siren while any interceptor is active.
   siren(on) {
-    if (!ctx) return;
-    if (on && !sirenTimer) {
-      let high = false;
-      sirenTimer = window.setInterval(() => {
-        high = !high;
-        this.blip(high ? 960 : 720, 0.28, 0.045);
-      }, 300);
-    } else if (!on && sirenTimer) {
-      window.clearInterval(sirenTimer);
-      sirenTimer = null;
+    if (on === this.sirenOn) return;
+    this.sirenOn = on;
+    if (!this.ctx) return;
+    if (on) {
+      let hi = false;
+      this.sirenTimer = window.setInterval(() => {
+        if (this.muted) return;
+        hi = !hi;
+        this.tone(hi ? 880 : 660, 0.32, 'triangle', 0.045);
+      }, 340);
+    } else if (this.sirenTimer !== null) {
+      window.clearInterval(this.sirenTimer);
+      this.sirenTimer = null;
     }
-  },
-
-  // Stop all continuous sound (engine + siren) when paused.
-  quiet() {
-    if (engineGain) engineGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-    this.siren(false);
-  },
-};
+  }
+}

@@ -4,96 +4,55 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OPAL COAST — an open-world crime game</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0c1420;
-    font-family: 'Segoe UI', system-ui, sans-serif; color: #f5f0e1; user-select: none; }
-  #game { position: fixed; inset: 0; }
-  #game canvas { display: block; }
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  .panel { background: rgba(10, 18, 30, 0.72); border: 1px solid rgba(245, 240, 225, 0.25);
-    border-radius: 8px; padding: 8px 12px; backdrop-filter: blur(2px); }
-  #top-left { position: absolute; top: 14px; left: 14px; display: flex; flex-direction: column; gap: 8px; }
-  #cash { font-size: 26px; font-weight: 800; color: #7fe0a8; letter-spacing: 0.5px; }
-  #wanted { font-size: 22px; letter-spacing: 4px; color: #f5f0e1; }
-  #wanted.hot { color: #ff5a4e; text-shadow: 0 0 12px rgba(255, 60, 40, 0.8); }
-  #shards { font-size: 15px; color: #35e0d0; font-weight: 700; }
-  #objective { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-    font-size: 16px; font-weight: 600; text-align: center; max-width: 46%; }
-  #minimap-wrap { position: absolute; top: 14px; right: 14px; }
-  #minimap { width: 168px; height: 168px; border-radius: 8px;
-    border: 1px solid rgba(245, 240, 225, 0.35); display: block; }
-  #bottom-left { position: absolute; bottom: 16px; left: 14px; display: flex; flex-direction: column; gap: 6px; }
-  #speed { font-size: 34px; font-weight: 800; }
-  #damage { font-size: 14px; color: #ffb347; font-weight: 700; }
-  #hint { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
-    font-size: 19px; font-weight: 700; color: #ffe9a8; text-shadow: 0 2px 6px #000;
-    transition: opacity 0.3s; }
-  #toast { position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%);
-    font-size: 17px; font-weight: 600; color: #fff; background: rgba(10, 18, 30, 0.8);
-    border: 1px solid rgba(255, 201, 58, 0.6); border-radius: 8px; padding: 10px 16px;
-    max-width: 70%; text-align: center; transition: opacity 0.3s; }
-  #controls { position: absolute; bottom: 16px; right: 14px; font-size: 12px; line-height: 1.7;
-    color: rgba(245, 240, 225, 0.85); text-align: right; }
-  .overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
-    background: linear-gradient(180deg, rgba(8, 20, 38, 0.82), rgba(8, 20, 38, 0.55)); }
-  .overlay h1 { font-size: 64px; letter-spacing: 8px; color: #ffc93a;
-    text-shadow: 0 4px 24px rgba(255, 201, 58, 0.5); }
-  .overlay h2 { font-size: 20px; font-weight: 400; color: #9fd8e8; margin: 10px 0 22px; }
-  .overlay p { max-width: 620px; font-size: 16px; line-height: 1.7; color: #e8e4da; }
-  .overlay .keys { margin-top: 18px; font-size: 14px; line-height: 2; color: #c9c2ae; }
-  .overlay .go { margin-top: 26px; font-size: 22px; font-weight: 800; color: #7fe0a8;
-    animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-  body.photo #hud { display: none; }
-</style>
 <link rel="icon" href="data:,">
-<script src="./vendor/three.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a1826; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #game, #game canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; z-index: 5; }
+  .panel { background: rgba(8, 20, 32, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 8px; padding: 8px 12px; }
+  #objective { position: absolute; top: 14px; left: 14px; font-size: 15px; font-weight: 600; }
+  #objective small { display: block; font-size: 11px; font-weight: 400; color: #ffc93c; letter-spacing: 0.12em; margin-bottom: 2px; }
+  #hint { position: absolute; top: 86px; left: 50%; transform: translateX(-50%); font-size: 17px; font-weight: 700; color: #ffe9a8; text-shadow: 0 2px 6px rgba(0,0,0,0.8); display: none; }
+  #cash { position: absolute; top: 14px; right: 14px; font-size: 20px; font-weight: 800; color: #7df9a8; }
+  #stars { position: absolute; top: 52px; right: 14px; font-size: 22px; letter-spacing: 2px; color: #ffc93c; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+  #speed { position: absolute; left: 14px; bottom: 14px; font-size: 34px; font-weight: 800; }
+  #damage { position: absolute; left: 14px; bottom: 58px; font-size: 13px; color: #ffb0a0; }
+  #hull { position: absolute; right: 14px; bottom: 208px; font-size: 14px; font-weight: 700; color: #ffb03a; display: none; }
+  #minimap { position: absolute; right: 14px; bottom: 14px; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; background: rgba(10,24,38,0.8); }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #fff; background: rgba(6, 16, 28, 0.55); z-index: 10; cursor: pointer; }
+  .overlay h1 { font-size: 64px; margin: 0; letter-spacing: 0.14em; color: #ffc93c; text-shadow: 0 4px 24px rgba(0,0,0,0.7); }
+  .overlay h2 { font-size: 18px; font-weight: 400; margin: 10px 0 0; color: #dfeefc; }
+  .overlay p { max-width: 560px; line-height: 1.55; color: #cfe0ee; }
+  .overlay .play { margin-top: 18px; font-size: 20px; font-weight: 800; background: #ffc93c; color: #1a1200; padding: 12px 34px; border-radius: 999px; }
+  .overlay .keys { font-size: 13px; color: #9fb6c9; margin-top: 16px; }
+  #pause { display: none; background: rgba(6, 16, 28, 0.7); }
+  #pause h1 { font-size: 44px; }
+</style>
 </head>
 <body>
 <div id="game"></div>
-
 <div id="hud">
-  <div id="top-left">
-    <div class="panel"><span id="cash">$250</span></div>
-    <div class="panel"><span id="wanted">☆☆☆☆</span></div>
-    <div class="panel"><span id="shards">◆ 0/10</span></div>
-  </div>
-  <div id="objective" class="panel">Welcome to Opal Coast</div>
-  <div id="minimap-wrap"><canvas id="minimap"></canvas></div>
-  <div id="bottom-left">
-    <div class="panel"><span id="speed">0 km/h</span><br><span id="damage"></span></div>
-  </div>
+  <div id="objective" class="panel"><small>MISSION</small><span id="objectiveText">Meet Dalia at the marina</span></div>
   <div id="hint"></div>
-  <div id="toast"></div>
-  <div id="controls">WASD drive &nbsp;·&nbsp; SPACE handbrake<br>E enter / exit car &nbsp;·&nbsp; F photo mode<br>P pause &nbsp;·&nbsp; M mute</div>
+  <div id="cash" class="panel">$250</div>
+  <div id="stars">☆☆☆☆</div>
+  <div id="speed">0 km/h</div>
+  <div id="damage">DAMAGE 0%</div>
+  <div id="hull" class="panel">TANKER HULL 100%</div>
+  <canvas id="minimap" width="180" height="180"></canvas>
 </div>
-
-<div id="start-screen" class="overlay">
+<div id="start" class="overlay">
   <h1>OPAL COAST</h1>
-  <h2>An open-world crime game — drive, hustle, survive the OCPD</h2>
-  <p>You are the wheel for Dalia's crew in Opal Coast, a sun-soaked city on the bay.
-  Run Dalia's pickups, escort Juno's tanker through rival ambushes, then pull the
-  four-star getaway Nacho planned. Steal moments between jobs: ten opal shards are
-  hidden around the city, and threading traffic at speed pays a near-miss bonus.
-  Just don't let the OCPD catch you standing still.</p>
-  <div class="keys">WASD / Arrows — drive &nbsp;·&nbsp; SPACE — handbrake &nbsp;·&nbsp; E — enter / exit car<br>
-  F — photo mode &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; Park on Juno's teal pad to repair</div>
-  <div class="go">CLICK TO START</div>
+  <h2>An original open-world crime game</h2>
+  <p>You drive for a crew working the edge of the OCPD's patience in Opal Coast, a sun-soaked city on the water. Dalia dispatches the jobs, Juno runs the garage, Kiki watches the streets, and Nacho thinks he is faster than you.</p>
+  <div class="play">CLICK TO PLAY</div>
+  <div class="keys">WASD drive &amp; walk &middot; Space handbrake &middot; E enter / exit car &middot; P photo mode &middot; Esc pause &middot; M mute</div>
 </div>
-
-<div id="pause-screen" class="overlay" style="display:none">
+<div id="pause" class="overlay">
   <h1>PAUSED</h1>
-  <p>Press P to get back on the road.</p>
+  <p>Press Esc to keep driving.</p>
 </div>
-
-<div id="busted-screen" class="overlay" style="display:none">
-  <h1>BUSTED</h1>
-  <p id="busted-fine">The OCPD impounded your car.</p>
-  <div class="go">PRESS ENTER — BACK TO JUNO'S GARAGE</div>
-</div>
-
-<script type="module" src="./src/main.js"></script>
+<script src="vendor/three.min.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

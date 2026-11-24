@@ -1,203 +1,142 @@
-// OPAL COAST — the wanted system and the OCPD interceptors.
-// Heat 0..100 maps to 0..4 stars. Hide out of sight for 8 seconds and
-// the heat cools; at 2+ stars interceptors spawn and chase, and if one
-// sits on you while you crawl, you get busted.
+// OPAL COAST — the OCPD wanted system: heat decays after 8 quiet seconds,
+// interceptors chase from 2 stars, and 3 stars up can bust you for $100.
 
-// three.min.js is the classic (UMD) build: it sets window.THREE.
-import { CFG, dist2d, clamp } from './config.js';
-import { S, addCash, setHint, setToast } from './state.js';
-import { AudioSys } from './audio.js';
+import { CFG, clamp } from './config.js';
+import { S, addCash, hint } from './state.js';
 
-const interceptors = [];
-let scene = null;
-let stagedExtra = 0; // extra interceptors placed by the screenshot staging
+const THREE = window.THREE;
 
-function buildInterceptor() {
+function makeInterceptor() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(2.0, 0.62, 4.3),
-    new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.35, metalness: 0.5 }),
+    new THREE.BoxGeometry(2.2, 0.7, 4.4),
+    new THREE.MeshLambertMaterial({ color: CFG.palette.police })
   );
-  body.position.y = 0.55;
-  body.castShadow = true;
+  body.position.y = 0.6;
   g.add(body);
   const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(1.7, 0.55, 2.1),
-    new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.3, metalness: 0.4 }),
+    new THREE.BoxGeometry(1.8, 0.6, 2),
+    new THREE.MeshLambertMaterial({ color: 0x30343e })
   );
-  cabin.position.set(0, 1.05, -0.2);
+  cabin.position.set(0, 1.2, -0.2);
   g.add(cabin);
-  // The light bar: red and blue, flashing in the animation step.
-  const bar = new THREE.Mesh(
-    new THREE.BoxGeometry(1.2, 0.22, 0.5),
-    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4 }),
-  );
-  bar.position.set(0, 1.45, -0.2);
-  g.add(bar);
-  const red = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.2, 0.42),
-    new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0xff2222, emissiveIntensity: 2 }),
-  );
-  red.position.set(-0.32, 1.45, -0.2);
-  red.name = 'lightR';
+  const barGeo = new THREE.BoxGeometry(0.7, 0.22, 0.5);
+  const red = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a }));
+  red.position.set(-0.45, 1.62, -0.2);
+  const blue = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x2a6aff }));
+  blue.position.set(0.45, 1.62, -0.2);
   g.add(red);
-  const blue = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.2, 0.42),
-    new THREE.MeshStandardMaterial({ color: 0x2244ff, emissive: 0x2244ff, emissiveIntensity: 2 }),
-  );
-  blue.position.set(0.32, 1.45, -0.2);
-  blue.name = 'lightB';
   g.add(blue);
-  const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 });
-  for (const [wx, wz] of [[-0.95, 1.4], [0.95, 1.4], [-0.95, -1.4], [0.95, -1.4]]) {
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.34, 10);
+  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  for (const [wx, wz] of [[-1.05, 1.45], [1.05, 1.45], [-1.05, -1.45], [1.05, -1.45]]) {
     const w = new THREE.Mesh(wheelGeo, wheelMat);
     w.rotation.z = Math.PI / 2;
-    w.position.set(wx, 0.4, wz);
+    w.position.set(wx, 0.42, wz);
     g.add(w);
   }
-  return g;
+  g.visible = false;
+  return { group: g, red, blue };
 }
 
-function wantedCount() {
-  if (S.wanted <= 1) return 0;
-  if (S.wanted === 2) return 1;
-  if (S.wanted === 3) return 2;
-  return 3;
-}
+export function createPolice(scene) {
+  const interceptors = [];
+  for (let i = 0; i < 4; i++) {
+    const built = makeInterceptor();
+    scene.add(built.group);
+    interceptors.push({
+      mesh: built.group,
+      red: built.red,
+      blue: built.blue,
+      pos: new THREE.Vector3(0, 0, 0),
+      heading: 0,
+      speed: 0,
+      active: false,
+    });
+  }
 
-function spawnInterceptor(x, z) {
-  const mesh = buildInterceptor();
-  scene.add(mesh);
-  const it = { mesh, x, z, heading: 0, speed: 0, hold: 0 };
-  interceptors.push(it);
-  return it;
-}
+  function place(it, x, z, heading) {
+    it.pos.set(x, 0, z);
+    it.heading = heading;
+    it.active = true;
+    it.mesh.visible = true;
+    it.mesh.position.copy(it.pos);
+    it.mesh.rotation.y = heading;
+  }
 
-function removeInterceptor(it) {
-  scene.remove(it.mesh);
-  const i = interceptors.indexOf(it);
-  if (i >= 0) interceptors.splice(i, 1);
-}
-
-export const Police = {
-  init(sceneIn) {
-    scene = sceneIn;
-  },
-
-  get count() {
-    return interceptors.length;
-  },
-  get list() {
-    return interceptors;
-  },
-
-  // Place interceptors by hand (screenshot staging, mission m3). The spots
-  // sit ahead of the anchor point, flanking it, so they read in the frame.
-  stage(count, aroundX, aroundZ) {
-    const spots = [
-      { x: aroundX - 7, z: aroundZ + 16 },
-      { x: aroundX + 8, z: aroundZ + 10 },
-      { x: aroundX - 2, z: aroundZ + 26 },
-    ];
-    for (let i = 0; i < count && i < spots.length; i++) {
-      spawnInterceptor(spots[i].x, spots[i].z);
-    }
-    stagedExtra = count;
-  },
-
-  clearStaged() {
-    while (interceptors.length > stagedExtra) removeInterceptor(interceptors[interceptors.length - 1]);
-    stagedExtra = 0;
-  },
-
-  update(dt) {
-    if (S.paused) return;
-    // Heat cools only after 8 quiet seconds out of trouble.
-    if (S.time - S.lastCrimeAt > CFG.heatDecayDelay && S.heat > 0) {
+  function update(dt, player, audio) {
+    // Heat cools after 8 seconds without a crime.
+    if (S.time - S.lastCrime > CFG.heatDecayDelay && S.heat > 0) {
       S.heat = Math.max(0, S.heat - CFG.heatDecayRate * dt);
-      S.wanted = Math.min(CFG.maxWanted, Math.floor(S.heat / CFG.heatPerStar));
+      S.wanted = Math.min(4, Math.floor(S.heat / 25));
     }
-    // Speeding past the law: if an interceptor is close and you fly by,
-    // that counts as a crime too.
-    for (const it of interceptors) {
-      if (!S.onFoot && Math.abs(S.playerSpeed) > 26 && dist2d(S.playerX, S.playerZ, it.x, it.z) < 12) {
-        if (S.time - S.lastCrimeAt > 2) {
-          S.heat = Math.min(100, S.heat + CFG.heatPerSpeeding);
-          S.lastCrimeAt = S.time;
-          S.wanted = Math.min(CFG.maxWanted, Math.floor(S.heat / CFG.heatPerStar));
-        }
+
+    const want = S.wanted >= 2 ? Math.min(S.wanted - 1, 3) : 0;
+    let active = 0;
+    for (const it of interceptors) if (it.active) active++;
+
+    // Spawn up to the wanted count, ahead of the player on the road.
+    while (active < want) {
+      const it = interceptors.find((x) => !x.active);
+      if (!it) break;
+      const f = { x: Math.sin(player.heading), z: Math.cos(player.heading) };
+      const side = active % 2 === 0 ? 1 : -1;
+      place(
+        it,
+        player.pos.x + f.x * 45 + -f.z * side * 6,
+        player.pos.z + f.z * 45 + f.x * side * 6,
+        player.heading
+      );
+      active++;
+    }
+    // Stand down when the heat is gone.
+    if (want === 0) {
+      for (const it of interceptors) {
+        it.active = false;
+        it.mesh.visible = false;
       }
     }
 
-    // Keep the interceptor count matched to the wanted level.
-    const want = wantedCount();
-    while (interceptors.length < want) {
-      const a = Math.random() * Math.PI * 2;
-      spawnInterceptor(
-        clamp(S.playerX + Math.sin(a) * 55, -190, 190),
-        clamp(S.playerZ + Math.cos(a) * 55, -190, 190),
-      );
-    }
-    while (interceptors.length > want) removeInterceptor(interceptors[interceptors.length - 1]);
-
-    // Chase: steer at the player, ram when close, hold to bust.
+    const flash = Math.floor(S.time * 4) % 2 === 0;
     for (const it of interceptors) {
-      const dx = S.playerX - it.x;
-      const dz = S.playerZ - it.z;
-      const d = Math.hypot(dx, dz);
-      const wantHeading = Math.atan2(dx, dz);
-      let dh = wantHeading - it.heading;
+      if (!it.active) continue;
+      it.red.visible = flash;
+      it.blue.visible = !flash;
+      // Steer toward the player and close in.
+      const dx = player.pos.x - it.pos.x;
+      const dz = player.pos.z - it.pos.z;
+      const dist = Math.hypot(dx, dz);
+      const targetHeading = Math.atan2(dx, dz);
+      let dh = targetHeading - it.heading;
       while (dh > Math.PI) dh -= Math.PI * 2;
       while (dh < -Math.PI) dh += Math.PI * 2;
       it.heading += clamp(dh, -2.2 * dt, 2.2 * dt);
-      const targetSpeed = S.onFoot ? 10 : Math.min(34, 12 + Math.abs(S.playerSpeed) * 0.9);
-      it.speed += (targetSpeed - it.speed) * Math.min(1, dt * 1.5);
-      it.x += Math.sin(it.heading) * it.speed * dt;
-      it.z += Math.cos(it.heading) * it.speed * dt;
-      it.mesh.position.set(it.x, 0, it.z);
+      const targetSpeed = Math.min(46, Math.abs(player.speed) + 6);
+      it.speed += (targetSpeed - it.speed) * Math.min(1, 1.5 * dt);
+      it.pos.x += Math.sin(it.heading) * it.speed * dt;
+      it.pos.z += Math.cos(it.heading) * it.speed * dt;
+      it.mesh.position.copy(it.pos);
       it.mesh.rotation.y = it.heading;
-      // Flash the light bar.
-      const phase = Math.floor(S.time * 6) % 2 === 0;
-      const r = it.mesh.getObjectByName('lightR');
-      const b = it.mesh.getObjectByName('lightB');
-      if (r) r.material.emissiveIntensity = phase ? 2.4 : 0.3;
-      if (b) b.material.emissiveIntensity = phase ? 0.3 : 2.4;
 
-      if (d < 4.5) {
-        if (!S.onFoot && Math.abs(S.playerSpeed) < 3) {
-          it.hold += dt;
-          if (it.hold > CFG.bustedHoldTime) this.bust();
-        } else {
-          it.hold = 0;
+      // Busted: caught at 3+ stars.
+      if (dist < 3.6 && S.wanted >= 3 && !player.onFoot) {
+        const fine = Math.min(S.cash, CFG.bustedFine);
+        addCash(-fine);
+        S.busted++;
+        S.heat = 0;
+        S.wanted = 0;
+        hint(`BUSTED — $${fine} fine, back to the garage`);
+        player.resetTo(-90, 46, Math.PI / 2, 0, false);
+        for (const o of interceptors) {
+          o.active = false;
+          o.mesh.visible = false;
         }
-        if (!S.onFoot && Math.abs(S.playerSpeed) > 3) {
-          S.carDamage = Math.min(100, S.carDamage + 10 * dt);
-        }
-      } else {
-        it.hold = 0;
+        break;
       }
     }
-    AudioSys.siren(interceptors.length > 0 && S.started && !S.paused);
-  },
 
-  bust() {
-    if (S.busted) return;
-    S.busted = true;
-    S.over = true;
-    addCash(-CFG.bustedFine);
-    S.heat = 0;
-    S.wanted = 0;
-    while (interceptors.length > 0) removeInterceptor(interceptors[0]);
-    setToast(`BUSTED — the OCPD took $${CFG.bustedFine}. Back to Juno's garage.`, 5);
-    AudioSys.quiet();
-  },
+    audio.siren(interceptors.some((it) => it.active));
+  }
 
-  // After the busted overlay, put the player back at the garage, clean.
-  resetAfterBust() {
-    S.busted = false;
-    S.over = false;
-    S.carDamage = 0;
-    S.onFoot = false;
-  },
-};
+  return { interceptors, update, place };
+}

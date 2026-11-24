@@ -1,44 +1,35 @@
+# OPAL COAST
+
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/Mhmddikri21/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-# OPAL COAST
+An original open-world crime game built for the [make.fun GTA 6 bounty](https://make.fun/bounty/gta6-01). Nothing here comes from Rockstar or any other commercial game: the city, the crew, the story and the art are all our own. Built with [make.fun](https://make.fun/r/ekaq8a76).
 
-An original open-world crime game built for the [make.fun GTA 6 bounty](https://make.fun/bounty/gta6-01) — a sun-soaked coastal city you explore on foot and by car, with traffic, pedestrians, a wanted level, police chases, missions and a story. Nothing here comes from Rockstar or any other commercial game: the city, the characters and the story are all our own.
+## The game
 
-## The story
+You drive for a crew working the edge of the OCPD's patience in Opal Coast, a sun-soaked city on the water. Dalia dispatches the jobs, Juno runs the garage, Kiki watches the streets, and Nacho thinks he is faster than you.
 
-You are the wheel for Dalia's crew in Opal Coast, a city on the bay. Dalia dispatches the jobs, Juno keeps your car alive at her garage, Kiki watches the streets, and Nacho plans the getaways. Run the jobs, stay ahead of the OCPD, and don't get caught standing still.
+- **Drive and walk** — arcade car physics with handbrake turns and a chase camera whose field of view opens up at top speed; hop out with `E` and explore on foot.
+- **A living city** — 14 traffic cars looping the street grid, 26 pedestrians on the sidewalks, a marina, a pier, a plaza and a beach.
+- **Wanted system** — 0 to 4 stars. Hit a pedestrian or a car and the heat rises; hide out of sight for about 8 seconds and it cools. At two stars and up, OCPD interceptors chase you down — get caught at 3 stars and you are busted for a $100 fine.
+- **Missions** — a three-job chain: meet Dalia at the marina, escort the tanker (keep its hull above 30%), then lose the tail through 3 checkpoints against Nacho.
+- **Extras** — 10 opal shards to collect (two-note chime on pickup), near-miss bonuses for threading traffic at speed, garage repairs at Juno's, and a photo mode (`P`) that hides the HUD.
 
-## What is in the game
+## Controls
 
-- **Open city** — a road grid of pastel blocks, a beach, a marina full of moored boats, and a long pier out to sea, all built with Three.js.
-- **Driving** — arcade car physics with acceleration, braking, steering and a handbrake drift; the chase camera's field of view opens from 62° to about 71° at top speed.
-- **Traffic and pedestrians** — 14 AI cars cruising the grid and 26 pedestrians on the sidewalks who scatter when you bear down on them.
-- **Wanted system** — 0 to 4 stars. Hitting a pedestrian or a car, or speeding past the police, raises the heat; hide out of sight for 8 seconds and it cools. At 2+ stars OCPD interceptors with flashing light bars chase and ram you; get held while crawling and you are busted.
-- **Missions** — a three-job chain: m1 pick up Dalia's package, m2 escort Juno's tanker across town while rivals ram it (the game warns you once when its hull drops below 30%), m3 a four-star getaway through three checkpoints.
-- **Collectibles** — 10 opal shards hidden around the map; each one plays a two-note ascending chime and pays $25.
-- **Near-miss bonus** — thread past a traffic car at over 20 m/s without touching it for +$10 and a blip.
-- **Garage repair** — park on Juno's teal pad and hold still to repair the car.
-- **HUD** — cash, wanted stars, speed, damage, mission objective, and a live minimap with the player, traffic, police, tanker, shards and the mission beacon. F toggles photo mode (hides the HUD), P pauses.
+WASD drive / walk · Space handbrake · E enter / exit car · P photo mode · Esc pause · M mute.
 
-## How to run it
+## Run it
 
 ```sh
-node serve.ts --port 8080
-# open http://localhost:8080/
+node serve.ts            # serves game/ at http://localhost:8080
 ```
 
-Click to start. WASD / arrows drive, Space is the handbrake, E enters and exits the car, F is photo mode, P pauses.
-
-## Screenshots
-
-The four images in `screenshots/` are real renders of the game, staged with `?shot=1..4` (see `shots.json` for what each one shows).
-
-## How it is handed in
-
-`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/` into the output directory and writes `dossier.json` with the kit's `buildDossier`:
+Or build the submission output:
 
 ```sh
 mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
+
+`?shot=1..4` jumps to a staged scene (for screenshots), `?selftest=1` runs 30 headless frames and logs `SELFTEST OK ...` to the console.

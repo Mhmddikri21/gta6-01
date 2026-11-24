@@ -1,152 +1,120 @@
-// OPAL COAST — entry point: builds the renderer, wires every system,
-// runs the game loop, and hosts the headless self-test (?selftest=1)
-// and the staged screenshot scenes (?shot=N).
+// OPAL COAST — boot, the game loop, the headless self-test and the
+// staged screenshot scenes. index.html loads this as its module script.
 
-// three.min.js is the classic (UMD) build: it sets window.THREE, so this
-// module uses the global instead of importing it.
 import { CFG } from './config.js';
-import { S, resetGame, tickTimers } from './state.js';
-import { Input, bindInput } from './input.js';
+import { S, setMission, setWanted } from './state.js';
+import { Input } from './input.js';
 import { AudioSys } from './audio.js';
-import { buildWorld, animateWorld } from './world.js';
-import { Player } from './player.js';
-import { Traffic } from './traffic.js';
-import { Peds } from './peds.js';
-import { Police } from './police.js';
-import { Missions } from './missions.js';
-import { Collectibles } from './collectibles.js';
-import { Shots } from './shots.js';
-import { UI } from './ui.js';
+import { buildWorld } from './world.js';
+import { createPlayer } from './player.js';
+import { createTraffic } from './traffic.js';
+import { createPeds } from './peds.js';
+import { createPolice } from './police.js';
+import { createMissions } from './missions.js';
+import { createShards } from './collectibles.js';
+import { createUI } from './ui.js';
+import { stageShot } from './shots.js';
 
-const params = new URLSearchParams(window.location.search);
-const isSelfTest = params.has('selftest');
-const shotParam = params.get('shot');
-const shotNum = shotParam ? parseInt(shotParam, 10) : 0;
+const THREE = window.THREE;
 
-let renderer = null;
-let scene = null;
-let camera = null;
-let clockLast = 0;
-let framesRun = 0;
+const container = document.getElementById('game');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+container.appendChild(renderer.domElement);
 
-// One fixed simulation step, shared by the live loop and the self-test.
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(CFG.palette.sky);
+scene.fog = new THREE.Fog(CFG.palette.fog, 120, 420);
+
+const camera = new THREE.PerspectiveCamera(CFG.fovMin, window.innerWidth / window.innerHeight, 0.1, 900);
+
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x3f7a4e, 0.95);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2d0, 1.15);
+sun.position.set(120, 180, 60);
+scene.add(sun);
+
+const input = new Input();
+input.attach();
+const audio = new AudioSys();
+const world = buildWorld(scene);
+const player = createPlayer(scene, camera, world, input, audio);
+const traffic = createTraffic(scene);
+const peds = createPeds(scene);
+const police = createPolice(scene);
+const missions = createMissions({ scene, world, player, input, audio });
+const shards = createShards(scene);
+const ctx = { scene, camera, renderer, world, player, traffic, peds, police, missions, shards, audio, input };
+const ui = createUI({ ...ctx, ui: null });
+ctx.ui = ui;
+window.__game = ctx;
+
 function step(dt) {
   S.time += dt;
-  tickTimers(dt);
-  Player.update(dt);
-  Traffic.update(dt);
-  Peds.update(dt);
-  Police.update(dt);
-  Missions.update(dt);
-  Collectibles.update(dt);
-  animateWorld(scene, S.time);
+  player.update(dt);
+  traffic.update(dt, player, audio);
+  peds.update(dt, player, audio);
+  police.update(dt, player, audio);
+  missions.update(dt);
+  shards.update(dt, player, audio);
+  ui.update();
+  input.endFrame();
 }
 
-function frame(now) {
-  requestAnimationFrame(frame);
-  const dt = Math.min(0.05, clockLast ? (now - clockLast) / 1000 : 0.016);
-  clockLast = now;
-  if (!S.paused && S.started) {
-    step(dt);
-    framesRun += 1;
-  }
-  if (Input.pressed('KeyP') || Input.pressed('Escape')) {
-    if (S.started && !S.over) {
-      S.paused = !S.paused;
-      if (S.paused) AudioSys.quiet();
-    }
-  }
-  if (Input.pressed('KeyF')) {
-    S.photo = !S.photo;
-  }
-  if (Input.pressed('MouseClick') && !S.started) {
-    AudioSys.ensure();
-    S.started = true;
-  }
-  if (S.over && Input.pressed('Enter')) {
-    Police.resetAfterBust();
-    Player.placeCar(CFG.places.garage.x, CFG.places.garage.z + 8, 0, 0);
-    S.heat = 0;
-    S.wanted = 0;
-  }
-  UI.update();
-  Input.endFrame();
-  renderer.render(scene, camera);
-}
+const params = new URLSearchParams(window.location.search);
 
-// Headless self-test: stage a four-star m2 chase, run 30 fixed steps,
-// and log one line with the real live counts.
-function runSelfTest() {
-  S.started = true;
-  Missions.forceMission('m2');
-  S.heat = 100;
-  S.wanted = 4;
-  S.lastCrimeAt = S.time;
-  Player.placeCar(0, -20, 0, 28);
-  Police.stage(3, 0, -20);
+// Headless self-test: 30 fixed frames, then the verdict line.
+// NOTE: call forceStart() (it sets S.started) instead of setting the
+// flag first — forceStart returns early when S.started is already true
+// and would leave the start overlay on top of the screenshots.
+if (params.has('selftest')) {
+  ui.forceStart();
+  setMission('m2');
+  setWanted(4);
   for (let i = 0; i < 30; i++) step(1 / 60);
-  framesRun = 30;
-  renderer.render(scene, camera);
   console.log(
-    `SELFTEST OK frames=${framesRun} traffic=${Traffic.count} peds=${Peds.count} wanted=${S.wanted} mission=${S.mission.id}`,
+    `SELFTEST OK frames=30 traffic=${traffic.cars.length} peds=${peds.list.length} wanted=${S.wanted} mission=${S.mission}`
   );
-  document.title = 'SELFTEST OK';
-  window.__selftestDone = true;
+  window.__selftest_done = true;
 }
 
-function boot() {
-  resetGame();
-  bindInput();
+// Staged screenshot scene.
+if (params.has('shot')) {
+  const n = parseInt(params.get('shot'), 10) || 1;
+  ui.forceStart();
+  stageShot(n, ctx);
+  window.setTimeout(() => {
+    window.__shot_ready = true;
+  }, 600);
+}
 
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(CFG.fovBase, window.innerWidth / window.innerHeight, 0.1, 900);
-  camera.position.set(0, 5, -12);
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  document.getElementById('game').appendChild(renderer.domElement);
-
-  buildWorld(scene);
-  Player.init(scene, camera);
-  Traffic.init(scene);
-  Peds.init(scene);
-  Police.init(scene);
-  Missions.init(scene);
-  Collectibles.init(scene);
-  UI.init({ traffic: Traffic, peds: Peds, police: Police, missions: Missions, collectibles: Collectibles });
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // Screenshot staging runs the game live behind a fixed scene.
-  if (shotNum >= 1 && shotNum <= 4) {
-    Shots.stage(shotNum, {
-      player: Player,
-      police: Police,
-      missions: Missions,
-      traffic: Traffic,
-      peds: Peds,
-      collectibles: Collectibles,
-    });
-    // Let a few frames settle so the camera eases into place, then snap
-    // it exactly onto its target so the shot is never caught mid-ease.
-    for (let i = 0; i < 10; i++) step(1 / 60);
-    Player.snapCamera();
+let last = performance.now();
+let orbitT = 0;
+function frame(now) {
+  window.requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!S.started) {
+    // Slow orbit over the plaza behind the start screen.
+    orbitT += dt;
+    camera.position.set(Math.sin(orbitT * 0.08) * 70, 34, Math.cos(orbitT * 0.08) * 70);
+    camera.lookAt(0, 2, 0);
     renderer.render(scene, camera);
-    window.__shotReady = true;
-  }
-
-  if (isSelfTest) {
-    runSelfTest();
     return;
   }
-
-  requestAnimationFrame(frame);
+  if (S.paused) {
+    renderer.render(scene, camera);
+    return;
+  }
+  step(dt);
+  renderer.render(scene, camera);
 }
 
-boot();
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+window.requestAnimationFrame(frame);

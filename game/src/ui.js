@@ -1,181 +1,143 @@
-// OPAL COAST — the HUD: cash, wanted stars, speed, objective, minimap,
-// hints and toasts, plus the start screen, pause overlay and photo mode.
-// The minimap is a live top-down canvas: roads, sea, player, traffic,
-// police, the mission beacon and the remaining opal shards.
+// OPAL COAST — HUD, minimap, start screen, pause and photo mode.
+// All DOM lives in index.html; this module only drives it.
 
-import { CFG } from './config.js';
 import { S } from './state.js';
 
-let els = {};
-let minimap = null;
-let mctx = null;
-let world = null; // { traffic, peds, police, missions, collectibles }
-
-const MAP_SIZE = 168;
-const WORLD = CFG.worldHalf * 2;
-
-function toMap(x, z) {
-  const s = MAP_SIZE / WORLD;
-  return { x: (x + CFG.worldHalf) * s, y: (z + CFG.worldHalf) * s };
+function el(id) {
+  return document.getElementById(id);
 }
 
-function drawMinimap() {
-  if (!mctx) return;
-  const c = mctx;
-  c.clearRect(0, 0, MAP_SIZE, MAP_SIZE);
-  // City base and sea.
-  c.fillStyle = '#5a6b52';
-  c.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
-  const sea = toMap(CFG.coastX, 0);
-  c.fillStyle = '#1f7fa8';
-  c.fillRect(0, 0, Math.max(0, sea.x), MAP_SIZE);
-  // Roads.
-  c.strokeStyle = '#3a3f46';
-  c.lineWidth = 4;
-  for (const v of [-150, -100, -50, 0, 50, 100, 150]) {
-    const a = toMap(v, -200);
-    const b = toMap(v, 200);
-    c.beginPath();
-    c.moveTo(a.x, 0);
-    c.lineTo(a.x, MAP_SIZE);
-    c.stroke();
-    c.beginPath();
-    c.moveTo(0, a.y);
-    c.lineTo(MAP_SIZE, a.y);
-    c.stroke();
+export function createUI(ctx) {
+  const { audio, input } = ctx;
+  const hud = el('hud');
+  const speedEl = el('speed');
+  const cashEl = el('cash');
+  const starsEl = el('stars');
+  const objectiveEl = el('objectiveText');
+  const hintEl = el('hint');
+  const damageEl = el('damage');
+  const hullEl = el('hull');
+  const map = el('minimap');
+  const mctx = map ? map.getContext('2d') : null;
+  const startEl = el('start');
+  const pauseEl = el('pause');
+
+  function forceStart() {
+    if (S.started) return;
+    S.started = true;
+    audio.ensure();
+    if (startEl) startEl.style.display = 'none';
   }
-  // Garage pad.
-  const g = toMap(CFG.places.garage.x, CFG.places.garage.z);
-  c.fillStyle = '#2fd4c4';
-  c.fillRect(g.x - 4, g.y - 4, 8, 8);
-  // Opal shards.
-  c.fillStyle = '#35e0d0';
-  for (const s of world.collectibles.list) {
-    if (s.taken) continue;
-    const p = toMap(s.x, s.z);
-    c.beginPath();
-    c.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
-    c.fill();
+
+  function start() {
+    forceStart();
   }
-  // Traffic (yellow), police (red), tanker (blue square).
-  c.fillStyle = '#e8c93a';
-  for (const t of world.traffic.list) {
-    const p = toMap(t.x, t.z);
-    c.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+
+  if (startEl) {
+    startEl.addEventListener('click', start);
   }
-  c.fillStyle = '#ff3344';
-  for (const it of world.police.list) {
-    const p = toMap(it.x, it.z);
-    c.beginPath();
-    c.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-    c.fill();
-  }
-  const tk = world.missions.tankerPos;
-  if (tk.visible) {
-    const p = toMap(tk.x, tk.z);
-    c.fillStyle = '#3a9bff';
-    c.fillRect(p.x - 3, p.y - 3, 6, 6);
-  }
-  // Mission beacon: a pulsing gold star at the objective.
-  if (S.objective) {
-    const bp = beaconPos();
-    if (bp) {
-      const p = toMap(bp.x, bp.z);
-      const pulse = 4 + Math.sin(S.time * 5) * 1.5;
-      c.fillStyle = '#ffc93a';
-      c.beginPath();
-      c.arc(p.x, p.y, pulse, 0, Math.PI * 2);
-      c.fill();
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Enter' && !S.started) start();
+  });
+
+  function drawMinimap() {
+    if (!mctx || !map) return;
+    const W = map.width;
+    const H = map.height;
+    const sx = (x) => (x + 170) * (W / 380);
+    const sy = (z) => (z + 170) * (H / 340);
+    mctx.fillStyle = 'rgba(10, 24, 38, 0.85)';
+    mctx.fillRect(0, 0, W, H);
+    // Sea on the east and south edges.
+    mctx.fillStyle = 'rgba(30, 111, 158, 0.9)';
+    mctx.fillRect(sx(160), 0, W - sx(160), H);
+    mctx.fillRect(0, sy(160), W, H - sy(160));
+    // Roads.
+    mctx.strokeStyle = 'rgba(200, 200, 210, 0.55)';
+    mctx.lineWidth = 2;
+    for (const c of [-120, -60, 0, 60, 120]) {
+      mctx.beginPath();
+      mctx.moveTo(sx(c), 0);
+      mctx.lineTo(sx(c), H);
+      mctx.stroke();
+      mctx.beginPath();
+      mctx.moveTo(0, sy(c));
+      mctx.lineTo(W, sy(c));
+      mctx.stroke();
     }
-  }
-  // The player: a white arrow pointing where they face.
-  const pp = toMap(S.playerX, S.playerZ);
-  const hd = S.playerHeading;
-  c.fillStyle = '#ffffff';
-  c.beginPath();
-  c.moveTo(pp.x + Math.sin(hd) * 7, pp.y + Math.cos(hd) * 7);
-  c.lineTo(pp.x + Math.sin(hd + 2.5) * 5, pp.y + Math.cos(hd + 2.5) * 5);
-  c.lineTo(pp.x + Math.sin(hd - 2.5) * 5, pp.y + Math.cos(hd - 2.5) * 5);
-  c.closePath();
-  c.fill();
-  c.strokeStyle = '#000000';
-  c.lineWidth = 1;
-  c.stroke();
-}
-
-function beaconPos() {
-  if (S.mission.id === 'm1') return CFG.places.daliaPickup;
-  if (S.mission.id === 'm2') {
-    const tk = world.missions.tankerPos;
-    return tk.visible ? { x: tk.x, z: tk.z } : null;
-  }
-  if (S.mission.id === 'm3' && S.mission.checkpointsHit < CFG.raceCheckpoints.length) {
-    return CFG.raceCheckpoints[S.mission.checkpointsHit];
-  }
-  return null;
-}
-
-function stars() {
-  let out = '';
-  for (let i = 0; i < 4; i++) out += i < S.wanted ? '★' : '☆';
-  return out;
-}
-
-export const UI = {
-  init(worldIn) {
-    world = worldIn;
-    els = {
-      hud: document.getElementById('hud'),
-      cash: document.getElementById('cash'),
-      wanted: document.getElementById('wanted'),
-      speed: document.getElementById('speed'),
-      damage: document.getElementById('damage'),
-      objective: document.getElementById('objective'),
-      hint: document.getElementById('hint'),
-      toast: document.getElementById('toast'),
-      shards: document.getElementById('shards'),
-      start: document.getElementById('start-screen'),
-      pause: document.getElementById('pause-screen'),
-      busted: document.getElementById('busted-screen'),
-      fine: document.getElementById('busted-fine'),
+    const dot = (x, z, color, r) => {
+      mctx.fillStyle = color;
+      mctx.beginPath();
+      mctx.arc(sx(x), sy(z), r, 0, Math.PI * 2);
+      mctx.fill();
     };
-    minimap = document.getElementById('minimap');
-    if (minimap) {
-      minimap.width = MAP_SIZE;
-      minimap.height = MAP_SIZE;
-      mctx = minimap.getContext('2d');
+    // Mission marker and tanker.
+    const { missions, police, player } = ctx;
+    if (missions && missions.marker) {
+      dot(missions.marker.position.x, missions.marker.position.z, '#ffc93c', 4);
     }
-  },
+    if (missions && missions.tanker.visible) {
+      dot(missions.tanker.position.x, missions.tanker.position.z, '#ff8c2a', 3.5);
+    }
+    if (missions && missions.nacho.visible) {
+      dot(missions.nacho.position.x, missions.nacho.position.z, '#ffd94a', 3);
+    }
+    for (const it of police.interceptors) {
+      if (it.active) dot(it.pos.x, it.pos.z, '#ff2a2a', 3);
+    }
+    // The player, as a triangle pointing along the heading. On the map
+    // east is right and south is down, so forward (sin a, cos a) in
+    // (x, z) is the screen angle atan2(cos a, sin a).
+    const px = sx(player.pos.x);
+    const py = sy(player.pos.z);
+    const a = Math.atan2(Math.cos(player.heading), Math.sin(player.heading));
+    mctx.fillStyle = '#19b8a6';
+    mctx.beginPath();
+    mctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7);
+    mctx.lineTo(px + Math.cos(a + 2.5) * 5, py + Math.sin(a + 2.5) * 5);
+    mctx.lineTo(px + Math.cos(a - 2.5) * 5, py + Math.sin(a - 2.5) * 5);
+    mctx.closePath();
+    mctx.fill();
+  }
 
-  // Called every frame: refresh the numbers and the minimap.
-  update() {
-    if (!els.hud) return;
-    els.cash.textContent = `$${S.cash}`;
-    els.wanted.textContent = stars();
-    els.wanted.className = S.wanted > 0 ? 'wanted hot' : 'wanted';
-    const kmh = Math.round(Math.abs(S.playerSpeed) * 3.6);
-    els.speed.textContent = S.onFoot ? 'ON FOOT' : `${kmh} km/h`;
-    els.damage.textContent = S.onFoot ? '' : `DAMAGE ${Math.round(S.carDamage)}%`;
-    els.objective.textContent = S.objective;
-    els.shards.textContent = `◆ ${S.shards}/${S.shardsTotal}`;
-    els.hint.textContent = S.hint;
-    els.hint.style.opacity = S.hint ? '1' : '0';
-    els.toast.textContent = S.toast;
-    els.toast.style.opacity = S.toast ? '1' : '0';
+  function update() {
+    // Toggles that live on key presses.
+    if (input.pressed('Escape') && S.started) {
+      S.paused = !S.paused;
+      if (pauseEl) pauseEl.style.display = S.paused ? 'flex' : 'none';
+    }
+    if (input.pressed('KeyP') && S.started) {
+      S.photo = !S.photo;
+    }
+    if (input.pressed('KeyM')) {
+      const muted = audio.toggleMute();
+      if (!S.photo) {
+        // Show the mute state briefly as a hint.
+        S.hint = muted ? 'Sound muted' : 'Sound on';
+        S.hintUntil = S.time + 1.2;
+      }
+    }
+
+    if (hud) hud.style.display = S.photo || !S.started ? 'none' : 'block';
+    if (speedEl) speedEl.textContent = `${S.speedKmh} km/h`;
+    if (cashEl) cashEl.textContent = `$${S.cash}`;
+    if (starsEl) starsEl.textContent = '★'.repeat(S.wanted) + '☆'.repeat(4 - S.wanted);
+    if (objectiveEl) objectiveEl.textContent = S.objective;
+    if (damageEl) damageEl.textContent = `DAMAGE ${S.damage}%`;
+    if (hullEl) {
+      hullEl.style.display = S.mission === 'm2' ? 'block' : 'none';
+      hullEl.textContent = `TANKER HULL ${Math.round(S.hull)}%`;
+    }
+    if (hintEl) {
+      if (S.time < S.hintUntil && S.hint) {
+        hintEl.style.display = 'block';
+        hintEl.textContent = S.hint;
+      } else {
+        hintEl.style.display = 'none';
+      }
+    }
     drawMinimap();
+  }
 
-    // Overlays.
-    els.start.style.display = S.started ? 'none' : 'flex';
-    els.pause.style.display = S.paused && S.started ? 'flex' : 'none';
-    if (S.over) {
-      els.busted.style.display = 'flex';
-    } else {
-      els.busted.style.display = 'none';
-    }
-    document.body.classList.toggle('photo', S.photo);
-  },
-
-  showBusted(fine) {
-    if (els.fine) els.fine.textContent = `The OCPD impounded your car and fined you $${fine}.`;
-  },
-};
+  return { update, forceStart };
+}

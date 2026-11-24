@@ -1,57 +1,60 @@
-// OPAL COAST — opal shards: ten glowing stones hidden around the city.
-// Walk or drive through one to pick it up: a two-note chime and $25.
+// OPAL COAST — 10 opal shards hidden around the city. Each one pays $50
+// with a two-note chime; finding all ten pays a $250 bonus.
 
-// three.min.js is the classic (UMD) build: it sets window.THREE.
-import { CFG, dist2d } from './config.js';
-import { S, addCash, setHint } from './state.js';
-import { AudioSys } from './audio.js';
+import { CFG } from './config.js';
+import { S, addCash, hint } from './state.js';
 
-const shards = [];
-let scene = null;
+const THREE = window.THREE;
 
-export const Collectibles = {
-  init(sceneIn) {
-    scene = sceneIn;
-    const geo = new THREE.OctahedronGeometry(0.7);
-    for (const spot of CFG.shardSpots) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0x35e0d0,
-        emissive: 0x1fb5a8,
-        emissiveIntensity: 1.6,
-        roughness: 0.2,
-        metalness: 0.4,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(spot.x, 1.4, spot.z);
-      mesh.castShadow = true;
-      scene.add(mesh);
-      shards.push({ mesh, x: spot.x, z: spot.z, taken: false, phase: Math.random() * Math.PI * 2 });
-    }
-  },
+const SHARD_SPOTS = [
+  [6, 6],
+  [-40, 150],
+  [180, 2],
+  [-80, 50],
+  [150, -20],
+  [-120, 120],
+  [120, -120],
+  [-30, -90],
+  [90, 90],
+  [30, -120],
+];
 
-  get count() {
-    return shards.filter((s) => !s.taken).length;
-  },
-  get list() {
-    return shards;
-  },
+export function createShards(scene) {
+  const list = [];
+  const geo = new THREE.OctahedronGeometry(0.9);
+  for (let i = 0; i < CFG.shardCount; i++) {
+    const [x, z] = SHARD_SPOTS[i % SHARD_SPOTS.length];
+    const mat = new THREE.MeshLambertMaterial({
+      color: CFG.palette.opal,
+      emissive: CFG.palette.opal,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, 1.4, z);
+    scene.add(mesh);
+    list.push({ mesh, x, z, taken: false, phase: i * 0.7 });
+  }
 
-  update(dt) {
-    if (S.paused) return;
-    for (const s of shards) {
+  function update(dt, player, audio) {
+    for (const s of list) {
       if (s.taken) continue;
-      // Float and spin so they catch the eye.
-      s.phase += dt * 2;
-      s.mesh.position.y = 1.4 + Math.sin(s.phase) * 0.35;
-      s.mesh.rotation.y += dt * 1.5;
-      if (dist2d(S.playerX, S.playerZ, s.x, s.z) < CFG.shardRadius) {
+      s.mesh.rotation.y += dt * 1.6;
+      s.mesh.position.y = 1.4 + Math.sin(S.time * 2 + s.phase) * 0.35;
+      const d = Math.hypot(player.pos.x - s.x, player.pos.z - s.z);
+      if (d < 2.2) {
         s.taken = true;
         s.mesh.visible = false;
-        S.shards += 1;
+        S.shards++;
         addCash(CFG.shardReward);
-        setHint(`Opal shard ${S.shards}/${S.shardsTotal} +$${CFG.shardReward}`, 2.5);
-        AudioSys.chime();
+        audio.chime();
+        if (S.shards >= CFG.shardCount) {
+          addCash(250);
+          hint('All 10 opals found — $250 bonus!');
+        } else {
+          hint(`OPAL SHARD +$${CFG.shardReward} (${S.shards}/10)`);
+        }
       }
     }
-  },
-};
+  }
+
+  return { list, update };
+}
