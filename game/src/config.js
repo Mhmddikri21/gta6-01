@@ -1,66 +1,60 @@
-// OPAL COAST — tuning, palette and the seeded layout.
-// Every number the game balances on lives here so a tweak is one line.
+// OPAL COAST — tuning constants and the seeded city layout.
+// All numbers the other modules share live here, so one edit retunes the game.
 
 export const CFG = {
-  seed: 20261124,
-  cityHalf: 160,
-  roadGap: 60,
-  roadWidth: 10,
+  // World: a street grid on the coast, sea to the east.
+  blockSize: 42,
+  roadWidth: 12,
+  grid: 5, // 5x5 blocks
+  seaX: 128, // x beyond this is water
+  beachX: 112,
+
+  // Player car.
+  topSpeed: 38, // m/s (~137 km/h)
+  accel: 16,
+  brake: 30,
+  reverseSpeed: 12,
+  steerMax: 0.55, // rad at standstill
+  handbrakeGrip: 0.35,
+  fovBase: 62,
+  fovTop: 71,
+
+  // Traffic.
   trafficCount: 14,
-  pedCount: 26,
-  shardCount: 10,
-  maxSpeed: 42, // m/s, about 151 km/h
-  accel: 24,
-  brake: 36,
-  reverseMax: 12,
-  steerRate: 1.9,
-  drag: 0.55,
-  grip: 6.5,
-  handbrakeGrip: 1.6,
+  trafficSpeed: 9,
   nearMissSpeed: 20,
   nearMissReward: 10,
-  nearMissCooldown: 4,
-  nearMissDist: 4.2,
-  hitPedHeat: 25,
-  hitCarHeat: 15,
-  heatDecayDelay: 8,
-  heatDecayRate: 12,
+  nearMissCooldown: 4, // seconds per car
+
+  // Pedestrians.
+  pedCount: 26,
+
+  // Police / wanted.
+  maxStars: 4,
+  heatPerPed: 1,
+  heatPerCar: 1,
+  heatDecaySeconds: 8, // hidden this long cools one star
   bustedFine: 100,
-  shardReward: 50,
+
+  // Missions.
+  tankerHullMax: 100,
+  tankerHullWarnAt: 30, // warn once below this
   missionReward: 500,
-  repairCost: 20,
-  fovMin: 62,
-  fovMax: 71,
-  walkSpeed: 6,
-  tankerSpeed: 10,
-  tankerHull: 100,
-  hullWarnAt: 30,
-  rivalHitDamage: 8,
-  palette: {
-    sky: 0x87bfe8,
-    fog: 0x9fd0ea,
-    ground: 0x3f7a4e,
-    sand: 0xe8d49a,
-    water: 0x1e6f9e,
-    road: 0x2c2f36,
-    sidewalk: 0x9aa0a8,
-    building: [0xd8c9a3, 0xc9a06a, 0x8fb3c9, 0xe0a080, 0xa8c69f, 0xd0b0c0],
-    car: 0x19b8a6,
-    tanker: 0xd8b13a,
-    police: 0x1a1d24,
-    gold: 0xffc93c,
-    opal: 0x7df9e8,
-  },
-  garage: { x: -90, z: 60 },
-  marina: { x: 148, z: 0 },
-  pier: { x: 188, z: 0 },
-  plaza: { x: 0, z: 0 },
-  beach: { x: 0, z: 150 },
+
+  // Collectibles.
+  shardCount: 10,
+  shardReward: 50,
+  shardAllBonus: 250,
+
+  // Garage.
+  repairCost: 0, // free repair at Juno's garage — drive inside to fix damage
+  // Minimap.
+  mapRange: 260, // world units the minimap spans
 };
 
-// Deterministic RNG (mulberry32) so the city layout and the staged
-// screenshots are the same on every load.
-export function mulberry32(a) {
+// Seeded RNG (mulberry32) so the city layout is identical every run.
+export function mulberry32(seed) {
+  let a = seed >>> 0;
   return function () {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
@@ -70,24 +64,23 @@ export function mulberry32(a) {
   };
 }
 
-export function makeRng(seed) {
-  return mulberry32(seed);
+// Street centre lines for the grid, derived from the constants.
+export function streetLines() {
+  const lines = [];
+  const half = (CFG.grid * CFG.blockSize) / 2;
+  for (let i = 0; i <= CFG.grid; i++) {
+    const c = -half + i * CFG.blockSize;
+    lines.push({ axis: 'x', at: c });
+    lines.push({ axis: 'z', at: c });
+  }
+  return lines;
 }
 
-export function pick(rng, arr) {
-  return arr[Math.floor(rng() * arr.length)];
-}
-
-export function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-export function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-export function dist2(ax, az, bx, bz) {
-  const dx = ax - bx;
-  const dz = az - bz;
-  return dx * dx + dz * dz;
-}
+// Named places in the city.
+export const PLACES = {
+  marina: { x: 96, z: -84 },
+  pier: { x: 122, z: 20 },
+  garage: { x: -63, z: 42 },
+  plaza: { x: 0, z: 0 },
+  beach: { x: 116, z: -40 },
+};

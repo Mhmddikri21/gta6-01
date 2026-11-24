@@ -1,237 +1,199 @@
-// OPAL COAST — the player: arcade car physics, on-foot mode, the chase
-// camera with its speed FOV kick, garage repair and enter/exit.
+// OPAL COAST — the player car: arcade physics, on-foot mode, garage repair, camera.
+// The car is a teal box with a cabin; the on-foot player is a small capsule figure.
 
-import { CFG, clamp, lerp, dist2 } from './config.js';
-import { S, addCash, hint } from './state.js';
-import { collideCircleAABBs } from './world.js';
+import { CFG, PLACES } from './config.js';
+import { S, addHeat, showHint } from './state.js';
+import { down, wasPressed } from './input.js';
+import { hitsCollider } from './world.js';
+import { crash } from './audio.js';
 
-const THREE = window.THREE;
+export const Player = {
+  mesh: null,
+  person: null,
+  speed: 0,
+  heading: 0,
+  steer: 0,
+  camera: null,
+  camPos: new THREE.Vector3(0, 6, -10),
+};
 
-function makeCarMesh(color) {
+function makeCar() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 0.72, 4.4),
-    new THREE.MeshLambertMaterial({ color })
+    new THREE.BoxGeometry(2, 0.7, 4.4),
+    new THREE.MeshLambertMaterial({ color: 0x2ec4b6 })
   );
-  body.position.y = 0.62;
+  body.position.y = 0.55;
   g.add(body);
   const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(1.8, 0.62, 2.1),
-    new THREE.MeshLambertMaterial({ color: 0x222831 })
+    new THREE.BoxGeometry(1.7, 0.6, 2.2),
+    new THREE.MeshLambertMaterial({ color: 0x1a2a3a })
   );
-  cabin.position.set(0, 1.22, -0.25);
+  cabin.position.set(0, 1.1, -0.3);
   g.add(cabin);
-  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.34, 12);
+  const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10);
   const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  for (const [wx, wz] of [[-1.05, 1.45], [1.05, 1.45], [-1.05, -1.45], [1.05, -1.45]]) {
+  for (const [x, z] of [[-1, 1.4], [1, 1.4], [-1, -1.4], [1, -1.4]]) {
     const w = new THREE.Mesh(wheelGeo, wheelMat);
     w.rotation.z = Math.PI / 2;
-    w.position.set(wx, 0.42, wz);
+    w.position.set(x, 0.38, z);
     g.add(w);
   }
-  const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff6c9 });
-  for (const s of [-1, 1]) {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.1), lightMat);
-    hl.position.set(s * 0.7, 0.72, 2.22);
-    g.add(hl);
-    const tl = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.18, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff2a2a })
-    );
-    tl.position.set(s * 0.7, 0.72, -2.22);
-    g.add(tl);
-  }
   return g;
 }
 
-function makePersonMesh() {
+function makePerson() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.34, 0.42, 1.05, 10),
-    new THREE.MeshLambertMaterial({ color: 0xe86a6a })
+    new THREE.CylinderGeometry(0.35, 0.45, 1.5, 8),
+    new THREE.MeshLambertMaterial({ color: 0xe8b04b })
   );
-  body.position.y = 0.95;
+  body.position.y = 0.9;
   g.add(body);
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.3, 10, 8),
-    new THREE.MeshLambertMaterial({ color: 0xe8b88a })
+    new THREE.SphereGeometry(0.32, 10, 8),
+    new THREE.MeshLambertMaterial({ color: 0xd8a070 })
   );
-  head.position.y = 1.75;
+  head.position.y = 1.95;
   g.add(head);
-  const legs = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.3),
-    new THREE.MeshLambertMaterial({ color: 0x2a3a5a })
-  );
-  legs.position.y = 0.25;
-  g.add(legs);
   return g;
 }
 
-export function createPlayer(scene, camera, world, input, audio) {
-  const car = makeCarMesh(CFG.palette.car);
-  scene.add(car);
-  const person = makePersonMesh();
-  person.visible = false;
-  scene.add(person);
+export function initPlayer(scene, camera) {
+  Player.mesh = makeCar();
+  Player.person = makePerson();
+  Player.person.visible = false;
+  Player.camera = camera;
+  Player.heading = S.car.heading;
+  scene.add(Player.mesh);
+  scene.add(Player.person);
+  Player.mesh.position.set(S.car.x, 0, S.car.z);
+  Player.person.position.set(S.player.x, 0, S.player.z);
+}
 
-  const P = {
-    car,
-    person,
-    pos: new THREE.Vector3(0, 0, 30),
-    heading: Math.PI,
-    speed: 0,
-    onFoot: false,
-    damage: 0,
-    repairCharged: false,
-    camPos: new THREE.Vector3(0, 4, 42),
-    fov: CFG.fovMin,
-  };
+// Park the car mesh beside the player when on foot (never on top of them).
+export function snapCamera() {
+  const cam = Player.camera;
+  if (!cam) return;
+  const h = Player.heading;
+  const back = S.onFoot ? 4 : 9;
+  const tx = (S.onFoot ? S.player.x : S.car.x) - Math.sin(h) * back;
+  const tz = (S.onFoot ? S.player.z : S.car.z) - Math.cos(h) * back;
+  cam.position.set(tx, S.onFoot ? 3.2 : 5.2, tz);
+  cam.lookAt(S.onFoot ? S.player.x : S.car.x, 1.2, S.onFoot ? S.player.z : S.car.z);
+}
 
-  function forward() {
-    return { x: Math.sin(P.heading), z: Math.cos(P.heading) };
+export function setOnFoot(onFoot) {
+  S.onFoot = onFoot;
+  Player.person.visible = onFoot;
+  if (onFoot) {
+    S.player.x = S.car.x + Math.sin(S.car.heading) * 3;
+    S.player.z = S.car.z + Math.cos(S.car.heading) * 3;
+    S.player.heading = S.car.heading;
+  }
+}
+
+// Teleport the car (used by shots and mission resets).
+export function resetTo(x, z, heading) {
+  S.car.x = x;
+  S.car.z = z;
+  S.car.heading = heading;
+  Player.heading = heading;
+  Player.speed = 0;
+  Player.mesh.position.set(x, 0, z);
+  Player.mesh.rotation.y = heading;
+}
+
+export function updatePlayer(dt) {
+  const speedLimit = S.onFoot ? 6 : CFG.topSpeed;
+
+  if (wasPressed('KeyE')) {
+    setOnFoot(!S.onFoot);
+    showHint(S.onFoot ? 'On foot — press E to get back in' : 'Back in the car');
   }
 
-  function desiredCam() {
-    const f = forward();
-    const back = P.onFoot ? 5.5 : 9.5;
-    const height = P.onFoot ? 2.6 : 3.8;
-    return new THREE.Vector3(P.pos.x - f.x * back, height, P.pos.z - f.z * back);
+  if (S.onFoot) {
+    // Walk with WASD, relative to the camera heading.
+    let mx = 0;
+    let mz = 0;
+    if (down('KeyW') || down('ArrowUp')) mz += 1;
+    if (down('KeyS') || down('ArrowDown')) mz -= 1;
+    if (down('KeyA') || down('ArrowLeft')) mx -= 1;
+    if (down('KeyD') || down('ArrowRight')) mx += 1;
+    if (mx !== 0 || mz !== 0) {
+      const len = Math.hypot(mx, mz);
+      const h = Player.heading;
+      const nx = (mx / len) * Math.cos(h) - (mz / len) * Math.sin(h);
+      const nz = (mx / len) * Math.sin(h) + (mz / len) * Math.cos(h);
+      S.player.x += nx * 6 * dt;
+      S.player.z += nz * 6 * dt;
+      Player.person.position.set(S.player.x, 0, S.player.z);
+      Player.person.rotation.y = Math.atan2(nx, nz);
+    }
+    S.speed = 0;
+  } else {
+    // Drive.
+    const fwd = (down('KeyW') || down('ArrowUp') ? 1 : 0) - (down('KeyS') || down('ArrowDown') ? 1 : 0);
+    const steerIn = (down('KeyA') || down('ArrowLeft') ? 1 : 0) - (down('KeyD') || down('ArrowRight') ? 1 : 0);
+    const handbrake = down('Space');
+    const grip = handbrake ? CFG.handbrakeGrip : 1;
+
+    if (fwd > 0) Player.speed += CFG.accel * dt;
+    else if (fwd < 0) Player.speed -= (Player.speed > 0.5 ? CFG.brake : CFG.accel * 0.7) * dt;
+    else Player.speed -= Math.sign(Player.speed) * Math.min(Math.abs(Player.speed), 8 * dt);
+    Player.speed = Math.max(-CFG.reverseSpeed, Math.min(CFG.topSpeed, Player.speed));
+
+    const steerTarget = steerIn * CFG.steerMax * (1 - Math.min(0.6, Math.abs(Player.speed) / CFG.topSpeed));
+    Player.steer += (steerTarget - Player.steer) * Math.min(1, dt * 8);
+    Player.heading += (Player.steer * Player.speed * grip * dt) / 2.6;
+
+    const nx = S.car.x + Math.sin(Player.heading) * Player.speed * dt;
+    const nz = S.car.z + Math.cos(Player.heading) * Player.speed * dt;
+    const hit = hitsCollider(nx, nz, 1.6);
+    if (hit) {
+      if (Math.abs(Player.speed) > 6) {
+        S.damage = Math.min(100, S.damage + 8);
+        addHeat(1);
+        crash();
+        showHint('CRASH — damage ' + Math.round(S.damage) + '%');
+      }
+      Player.speed *= 0.4;
+    } else {
+      S.car.x = nx;
+      S.car.z = nz;
+    }
+    S.car.heading = Player.heading;
+    S.speed = Player.speed;
+    Player.mesh.position.set(S.car.x, 0, S.car.z);
+    Player.mesh.rotation.y = Player.heading;
+
+    // Garage repair: drive into Juno's garage to fix the car, free.
+    const dx = S.car.x - PLACES.garage.x;
+    const dz = S.car.z - PLACES.garage.z;
+    if (dx * dx + dz * dz < 100 && S.damage > 0) {
+      S.damage = 0;
+      showHint("Juno's garage — car repaired, free");
+    }
   }
 
-  P.snapCamera = function () {
-    const d = desiredCam();
-    P.camPos.copy(d);
-    camera.position.copy(d);
-    const f = forward();
-    camera.lookAt(P.pos.x + f.x * 6, 1.4, P.pos.z + f.z * 6);
-  };
-
-  P.resetTo = function (x, z, heading, speed = 0, onFoot = false) {
-    P.pos.set(x, 0, z);
-    P.heading = heading;
-    P.speed = speed;
-    P.onFoot = onFoot;
-    S.onFoot = onFoot;
-    P.damage = 0;
-    if (!onFoot) {
-      car.position.copy(P.pos);
-      car.rotation.y = heading;
-    } else {
-      // Park the car off to the side so it never blocks the camera
-      // when the player is on foot.
-      car.position.set(x, 0, z + 6);
-      car.rotation.y = heading;
+  // Chase camera with FOV kick at speed.
+  const cam = Player.camera;
+  if (cam) {
+    const h = Player.heading;
+    const back = S.onFoot ? 5 : 9 + Math.abs(S.speed) * 0.06;
+    const tx = (S.onFoot ? S.player.x : S.car.x) - Math.sin(h) * back;
+    const tz = (S.onFoot ? S.player.z : S.car.z) - Math.cos(h) * back;
+    const ty = S.onFoot ? 3.4 : 5 + Math.abs(S.speed) * 0.02;
+    Player.camPos.x += (tx - Player.camPos.x) * Math.min(1, dt * 5);
+    Player.camPos.y += (ty - Player.camPos.y) * Math.min(1, dt * 5);
+    Player.camPos.z += (tz - Player.camPos.z) * Math.min(1, dt * 5);
+    cam.position.copy(Player.camPos);
+    cam.lookAt(S.onFoot ? S.player.x : S.car.x, 1.2, S.onFoot ? S.player.z : S.car.z);
+    const fovT = Math.min(1, Math.abs(S.speed) / CFG.topSpeed);
+    const fov = CFG.fovBase + (CFG.fovTop - CFG.fovBase) * fovT;
+    if (Math.abs(cam.fov - fov) > 0.1) {
+      cam.fov = fov;
+      cam.updateProjectionMatrix();
     }
-    person.position.copy(P.pos);
-    person.rotation.y = heading;
-    person.visible = onFoot;
-    P.snapCamera();
-  };
-
-  P.update = function (dt) {
-    // Enter / exit the car.
-    if (input.pressed('KeyE')) {
-      if (!P.onFoot && Math.abs(P.speed) < 1) {
-        P.onFoot = true;
-        S.onFoot = true;
-        person.visible = true;
-        person.position.set(P.pos.x + 2.4, 0, P.pos.z);
-        hint('On foot — press E near the car to get back in');
-      } else if (P.onFoot && dist2(P.pos.x, P.pos.z, car.position.x, car.position.z) < 12) {
-        P.onFoot = false;
-        S.onFoot = false;
-        person.visible = false;
-        hint('Back behind the wheel');
-      }
-    }
-
-    if (P.onFoot) {
-      const f = forward();
-      const th = input.throttle;
-      const st = input.steer;
-      P.heading += st * 2.4 * dt;
-      const mv = th * CFG.walkSpeed;
-      P.pos.x += f.x * mv * dt;
-      P.pos.z += f.z * mv * dt;
-      person.position.copy(P.pos);
-      person.rotation.y = P.heading;
-      P.speed = Math.abs(mv);
-      S.speedKmh = Math.round(P.speed * 3.6);
-    } else {
-      const th = input.throttle;
-      const st = input.steer;
-      if (th > 0) P.speed += CFG.accel * dt;
-      else if (th < 0) {
-        if (P.speed > 0.5) P.speed -= CFG.brake * dt;
-        else P.speed -= CFG.accel * 0.5 * dt;
-      }
-      P.speed -= P.speed * 0.12 * dt;
-      if (input.handbrake) {
-        P.speed -= P.speed * 1.4 * dt;
-      }
-      P.speed = clamp(P.speed, -CFG.reverseMax, CFG.maxSpeed);
-      const steerAuthority = clamp(Math.abs(P.speed) / 8, 0, 1) * Math.sign(P.speed || 1);
-      P.heading += st * CFG.steerRate * steerAuthority * dt * (input.handbrake ? 1.7 : 1);
-
-      const f = forward();
-      P.pos.x += f.x * P.speed * dt;
-      P.pos.z += f.z * P.speed * dt;
-
-      // Building collisions: push out, bounce, take damage.
-      const push = collideCircleAABBs(P.pos.x, P.pos.z, 1.7, world.colliders);
-      if (push) {
-        P.pos.x += push.x;
-        P.pos.z += push.z;
-        if (Math.abs(P.speed) > 6) {
-          audio.crash();
-          P.damage = Math.min(100, P.damage + 3);
-          hint('Crunched the paintwork');
-        }
-        P.speed *= -0.22;
-      }
-      // City bounds (the pier runs out to x 205).
-      if (P.pos.x > 208 || P.pos.x < -168 || P.pos.z > 168 || P.pos.z < -168) {
-        P.pos.x = clamp(P.pos.x, -168, 208);
-        P.pos.z = clamp(P.pos.z, -168, 168);
-        P.speed *= 0.4;
-      }
-      car.position.copy(P.pos);
-      car.rotation.y = P.heading;
-      S.speedKmh = Math.round(Math.abs(P.speed) * 3.6);
-      S.damage = Math.round(P.damage);
-      audio.engine(Math.abs(P.speed) / CFG.maxSpeed);
-    }
-
-    // Garage repair: stopped in the zone, damage drains, one $20 charge.
-    const gz = world.spots.garage;
-    const nearGarage = dist2(P.pos.x, P.pos.z, gz.x, gz.z) < 100;
-    if (!P.onFoot && nearGarage && Math.abs(P.speed) < 1 && P.damage > 0) {
-      if (!P.repairCharged) {
-        if (S.cash >= CFG.repairCost) {
-          addCash(-CFG.repairCost);
-          P.repairCharged = true;
-          hint(`Juno's garage — repairing ($${CFG.repairCost})`);
-        }
-      }
-      P.damage = Math.max(0, P.damage - 25 * dt);
-    } else if (!nearGarage) {
-      P.repairCharged = false;
-    }
-
-    // Chase camera with the speed FOV kick.
-    const target = lerp(CFG.fovMin, CFG.fovMax, Math.abs(P.speed) / CFG.maxSpeed);
-    if (Math.abs(target - P.fov) > 0.05) {
-      P.fov = target;
-      camera.fov = P.fov;
-      camera.updateProjectionMatrix();
-    }
-    const d = desiredCam();
-    const k = 1 - Math.exp(-6 * dt);
-    P.camPos.lerp(d, k);
-    camera.position.copy(P.camPos);
-    const f = forward();
-    camera.lookAt(P.pos.x + f.x * 6, 1.4, P.pos.z + f.z * 6);
-  };
-
-  return P;
+  }
 }

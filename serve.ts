@@ -1,43 +1,35 @@
-// OPAL COAST — a tiny static file server for local play-testing.
-// Usage: node serve.ts [--root game] [--port 8080]
-
+// OPAL COAST — tiny static file server for local testing (Node stdlib only).
+// Usage: node serve.ts [--root <dir>] [--port <n>]   (defaults: game/, 8080)
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { extname, join, normalize } from 'node:path';
 
 const args = process.argv.slice(2);
-function opt(name, fallback) {
-  const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
-}
+const root = args[args.indexOf('--root') + 1] ?? 'game';
+const port = Number(args[args.indexOf('--port') + 1] ?? 8080);
 
-const root = opt('--root', 'game');
-const port = parseInt(opt('--port', '8080'), 10);
-
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
-  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
 };
 
 const server = createServer((req, res) => {
-  const url = decodeURIComponent((req.url || '/').split('?')[0]);
-  const rel = url === '/' ? '/index.html' : url;
-  const file = join(root, rel);
-  if (!existsSync(file) || !statSync(file).isFile()) {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('not found');
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const rel = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\/+/, '');
+  const file = join(root, normalize(rel));
+  if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('not found\n');
     return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
+  res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
   res.end(readFileSync(file));
 });
 
-server.listen(port, () => {
-  console.log(`serving ${root} at http://localhost:${port}`);
-});
+server.listen(port, () => console.log(`OPAL COAST: serving ${root} at http://localhost:${port}`));

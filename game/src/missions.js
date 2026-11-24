@@ -1,295 +1,166 @@
-// OPAL COAST — the mission chain. m1 meet Dalia at the marina, m2 escort
-// the tanker (hull above 30%, warned once below it), m3 lose the tail
-// through 3 checkpoints against Nacho. Completing m3 pays $500.
+// OPAL COAST — missions: m1 meet Dalia at the marina, m2 tanker escort, m3 getaway race.
+// The tanker escort warns the player exactly once when its hull drops below 30%.
 
-import { CFG } from './config.js';
-import { S, addCash, setMission, setObjective, hint } from './state.js';
+import { CFG, PLACES } from './config.js';
+import { S, addCash, showHint } from './state.js';
+import { alarm } from './audio.js';
+import { resetTo } from './player.js';
 
-const THREE = window.THREE;
-
-const TANKER_ROUTE = [
-  [140, 0],
-  [60, 0],
-  [60, -60],
-  [0, -60],
-  [0, 0],
-  [60, 0],
-  [120, 0],
-  [185, 0],
-];
-
-const RING_SPOTS = [
-  [-60, 60],
-  [-120, 0],
-  [-60, -120],
-];
+export const Missions = {
+  tanker: null, // {mesh, x, z, hull}
+  checkpoints: [], // {mesh, x, z, done}
+  rival: null,
+};
 
 function makeTanker() {
   const g = new THREE.Group();
-  const cab = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 2.2, 2.6),
-    new THREE.MeshLambertMaterial({ color: CFG.palette.tanker })
-  );
-  cab.position.set(0, 1.4, 3.4);
-  g.add(cab);
   const tank = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.5, 1.5, 5.4, 14),
-    new THREE.MeshLambertMaterial({ color: 0xd8d8d8 })
+    new THREE.CylinderGeometry(2.2, 2.2, 12, 12),
+    new THREE.MeshLambertMaterial({ color: 0xc8b060 })
   );
   tank.rotation.x = Math.PI / 2;
-  tank.position.set(0, 1.5, -1.2);
+  tank.position.y = 2.4;
   g.add(tank);
-  const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.34, 10);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  for (const [wx, wz] of [[-1.15, 4.2], [1.15, 4.2], [-1.15, -2.6], [1.15, -2.6], [-1.15, 0.4], [1.15, 0.4]]) {
-    const w = new THREE.Mesh(wheelGeo, wheelMat);
-    w.rotation.z = Math.PI / 2;
-    w.position.set(wx, 0.45, wz);
-    g.add(w);
-  }
-  g.visible = false;
+  const cab = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 2.4, 2.4),
+    new THREE.MeshLambertMaterial({ color: 0x8a2a2a })
+  );
+  cab.position.set(0, 1.4, 7);
+  g.add(cab);
   return g;
 }
 
-function makeRival(color) {
+function makeCheckpoint(x, z) {
+  // Torus in the XY plane: its hole already faces along Z, the road direction,
+  // so a car driving the road passes through it. Do NOT rotate it around Y
+  // (that turns the ring edge-on to the road).
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(5, 0.5, 8, 24),
+    new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x664400 })
+  );
+  ring.position.set(x, 4, z);
+  return ring;
+}
+
+function makeRival() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(2.1, 0.68, 4.2),
-    new THREE.MeshLambertMaterial({ color })
+    new THREE.BoxGeometry(2, 0.7, 4.4),
+    new THREE.MeshLambertMaterial({ color: 0xd84b4b })
   );
-  body.position.y = 0.6;
+  body.position.y = 0.55;
   g.add(body);
-  const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(1.7, 0.55, 1.9),
-    new THREE.MeshLambertMaterial({ color: 0x1c2733 })
-  );
-  cabin.position.set(0, 1.15, -0.2);
-  g.add(cabin);
-  g.visible = false;
   return g;
 }
 
-export function createMissions(ctx) {
-  const { scene, world, player, input, audio } = ctx;
-
-  // The gold marker ring + beacon pillar showing the current objective.
-  const marker = new THREE.Group();
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.6, 3.4, 28),
-    new THREE.MeshBasicMaterial({ color: CFG.palette.gold, side: THREE.DoubleSide })
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.15;
-  marker.add(ring);
-  const beacon = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.7, 0.7, 30, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: CFG.palette.gold,
-      transparent: true,
-      opacity: 0.22,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-  );
-  beacon.position.y = 15;
-  marker.add(beacon);
-  marker.position.set(world.spots.marina.x, 0, world.spots.marina.z);
-  scene.add(marker);
-
+export function initMissions(scene) {
+  Missions.scene = scene;
   const tanker = makeTanker();
+  tanker.position.set(PLACES.marina.x + 6, 0, PLACES.marina.z);
   scene.add(tanker);
-  const tankerState = { wp: 0, pos: new THREE.Vector3(140, 0, 0), heading: Math.PI / 2 };
-
-  const rivals = [];
-  for (const color of [0xc94f4f, 0x8a2a2a]) {
-    const mesh = makeRival(color);
-    scene.add(mesh);
-    rivals.push({ mesh, mode: 'approach', cool: 0, tx: 0, tz: 0 });
+  Missions.tanker = { mesh: tanker, x: PLACES.marina.x + 6, z: PLACES.marina.z, hull: CFG.tankerHullMax };
+  // Three race checkpoints for m3, in a line down the coast road.
+  const cps = [
+    { x: 84, z: -42 },
+    { x: 84, z: 0 },
+    { x: 84, z: 42 },
+  ];
+  for (const c of cps) {
+    const ring = makeCheckpoint(c.x, c.z);
+    scene.add(ring);
+    Missions.checkpoints.push({ mesh: ring, x: c.x, z: c.z, done: false });
   }
+  const rival = makeRival();
+  rival.position.set(84, 0, -60);
+  scene.add(rival);
+  Missions.rival = { mesh: rival, x: 84, z: -60, speed: 0 };
+}
 
-  const rings = [];
-  for (const [rx, rz] of RING_SPOTS) {
-    const m = new THREE.Mesh(
-      new THREE.TorusGeometry(5, 0.45, 8, 26),
-      new THREE.MeshBasicMaterial({ color: CFG.palette.gold })
-    );
-    m.position.set(rx, 2.6, rz);
-    m.visible = false;
-    scene.add(m);
-    rings.push(m);
-  }
+export function placeTanker(x, z) {
+  if (!Missions.tanker) return;
+  Missions.tanker.x = x;
+  Missions.tanker.z = z;
+  Missions.tanker.mesh.position.set(x, 0, z);
+}
 
-  const nacho = makeRival(CFG.palette.gold);
-  scene.add(nacho);
+function distTo(x, z) {
+  const px = S.onFoot ? S.player.x : S.car.x;
+  const pz = S.onFoot ? S.player.z : S.car.z;
+  return Math.hypot(px - x, pz - z);
+}
 
-  function setM1() {
-    setMission('m1');
-    setObjective('Meet Dalia at the marina');
-    tanker.visible = false;
-    for (const r of rivals) r.mesh.visible = false;
-    for (const m of rings) m.visible = false;
-    nacho.visible = false;
-    marker.position.set(world.spots.marina.x, 0, world.spots.marina.z);
-  }
+export function setMission(id, text) {
+  S.mission = id;
+  S.missionText = text;
+  showHint(text, 3);
+}
 
-  function setM2() {
-    setMission('m2');
-    setObjective('Escort the tanker — keep hull above 30%');
-    S.hull = CFG.tankerHull;
-    S.hullWarned = false;
-    tankerState.wp = 0;
-    tankerState.pos.set(TANKER_ROUTE[0][0], 0, TANKER_ROUTE[0][1]);
-    tankerState.heading = Math.PI / 2;
-    tanker.visible = true;
-    tanker.position.copy(tankerState.pos);
-    for (const m of rings) m.visible = false;
-    nacho.visible = false;
-    for (let i = 0; i < rivals.length; i++) {
-      const r = rivals[i];
-      r.mode = 'approach';
-      r.cool = 1 + i * 2;
-      r.mesh.visible = true;
-      r.mesh.position.set(tankerState.pos.x - 20 - i * 12, 0, tankerState.pos.z + (i === 0 ? 14 : -14));
+export function updateMissions(dt) {
+  if (S.mission === 'm1') {
+    if (distTo(PLACES.marina.x, PLACES.marina.z) < 10) {
+      setMission('m2', 'Escort the tanker — keep its hull above 30%');
+      placeTanker(S.car.x + 8, S.car.z + 4);
     }
-    hint('Dalia: keep that tanker rolling, hull above 30%');
-  }
-
-  function setM3() {
-    setMission('m3');
-    setObjective('Lose the tail — hit 3 checkpoints');
-    S.checkpoint = 0;
-    tanker.visible = false;
-    for (const r of rivals) r.mesh.visible = false;
-    for (let i = 0; i < rings.length; i++) {
-      rings[i].visible = true;
-      rings[i].material.color.set(CFG.palette.gold);
+  } else if (S.mission === 'm2') {
+    // The tanker trundles along; rivals chip at its hull while you are near.
+    const t = Missions.tanker;
+    t.z += 3 * dt;
+    if (t.z > 100) t.z = -100;
+    t.mesh.position.set(t.x, 0, t.z);
+    t.mesh.rotation.y = 0;
+    const near = distTo(t.x, t.z) < 25;
+    if (near) {
+      t.hull = Math.max(0, t.hull - 1.2 * dt);
+    } else {
+      t.hull = Math.max(0, t.hull - 2.5 * dt);
     }
-    nacho.visible = true;
-    nacho.position.set(player.pos.x + 5, 0, player.pos.z + 6);
-    marker.position.set(RING_SPOTS[0][0], 0, RING_SPOTS[0][1]);
-    hint('Nacho: first to the last checkpoint buys the drinks');
-  }
-
-  function update(dt) {
-    // Marker bobs gently; beacon follows the current target.
-    marker.rotation.y += dt * 0.8;
-    ring.scale.setScalar(1 + Math.sin(S.time * 3) * 0.06);
-
-    if (S.mission === 'm1') {
-      const m = world.spots.marina;
-      const d = Math.hypot(player.pos.x - m.x, player.pos.z - m.z);
-      if (d < 8 && input.pressed('KeyE')) {
-        setM2();
-      }
+    S.hull = Math.round(t.hull);
+    // Warn exactly once when the hull drops below 30%.
+    if (t.hull < CFG.tankerHullWarnAt && !S.hullWarned) {
+      S.hullWarned = true;
+      alarm();
+      showHint('WARNING — tanker hull below 30%!', 3);
+    }
+    if (t.hull <= 0) {
+      setMission('m1', 'The tanker was lost — meet Dalia again');
+      t.hull = CFG.tankerHullMax;
+      S.hull = CFG.tankerHullMax;
+      S.hullWarned = false;
       return;
     }
-
-    if (S.mission === 'm2') {
-      // Drive the tanker along its route.
-      const wp = TANKER_ROUTE[tankerState.wp];
-      const dx = wp[0] - tankerState.pos.x;
-      const dz = wp[1] - tankerState.pos.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 2) {
-        tankerState.wp++;
-        if (tankerState.wp >= TANKER_ROUTE.length) {
-          setM3();
-          return;
-        }
-      } else {
-        const h = Math.atan2(dx, dz);
-        tankerState.heading = h;
-        tankerState.pos.x += Math.sin(h) * CFG.tankerSpeed * dt;
-        tankerState.pos.z += Math.cos(h) * CFG.tankerSpeed * dt;
-        tanker.position.copy(tankerState.pos);
-        tanker.rotation.y = h;
-      }
-      marker.position.copy(tankerState.pos);
-
-      // Rivals ram the tanker; each hit costs hull.
-      for (const r of rivals) {
-        if (r.cool > 0) r.cool -= dt;
-        const rp = r.mesh.position;
-        if (r.mode === 'approach') {
-          const ax = tankerState.pos.x - rp.x;
-          const az = tankerState.pos.z - rp.z;
-          const ad = Math.hypot(ax, az);
-          if (ad < 4.5 && r.cool <= 0) {
-            S.hull = Math.max(0, S.hull - CFG.rivalHitDamage);
-            r.cool = 3;
-            r.mode = 'retreat';
-            const len = ad || 1;
-            r.tx = tankerState.pos.x + (rp.x - tankerState.pos.x) / len * 40;
-            r.tz = tankerState.pos.z + (rp.z - tankerState.pos.z) / len * 40;
-            audio.crash();
-            hint(`Tanker hull ${Math.round(S.hull)}% — rivals on it!`);
-          } else {
-            const h = Math.atan2(ax, az);
-            rp.x += Math.sin(h) * 16 * dt;
-            rp.z += Math.cos(h) * 16 * dt;
-            r.mesh.rotation.y = h;
-          }
-        } else {
-          const bx = r.tx - rp.x;
-          const bz = r.tz - rp.z;
-          const bd = Math.hypot(bx, bz);
-          if (bd < 3 || r.cool <= 0) {
-            r.mode = 'approach';
-          } else {
-            const h = Math.atan2(bx, bz);
-            rp.x += Math.sin(h) * 16 * dt;
-            rp.z += Math.cos(h) * 16 * dt;
-            r.mesh.rotation.y = h;
-          }
-        }
-      }
-
-      // Warn once when the hull drops below 30%.
-      if (S.hull < CFG.hullWarnAt && !S.hullWarned) {
-        S.hullWarned = true;
-        audio.alarm();
-        hint('WARNING — tanker hull below 30%!');
-      }
-      if (S.hull <= 0) {
-        hint('The tanker is wrecked — job failed');
-        setM1();
-      }
-      return;
+    if (distTo(PLACES.pier.x, PLACES.pier.z) < 12 && t.hull > 0) {
+      addCash(CFG.missionReward);
+      setMission('m3', 'Getaway — hit 3 checkpoints, beat Nacho');
+      resetTo(84, -63, 0);
+      Missions.rival.speed = 16;
     }
-
-    if (S.mission === 'm3') {
-      // Nacho shadows the player, 12 m back.
-      const f = { x: Math.sin(player.heading), z: Math.cos(player.heading) };
-      const tx = player.pos.x - f.x * 12;
-      const tz = player.pos.z - f.z * 12;
-      const nx = nacho.position.x + (tx - nacho.position.x) * Math.min(1, 2 * dt);
-      const nz = nacho.position.z + (tz - nacho.position.z) * Math.min(1, 2 * dt);
-      nacho.position.set(nx, 0, nz);
-      nacho.rotation.y = player.heading;
-
-      const idx = S.checkpoint;
-      if (idx < rings.length) {
-        const spot = RING_SPOTS[idx];
-        marker.position.set(spot[0], 0, spot[1]);
-        rings[idx].rotation.y += dt * 1.2;
-        const d = Math.hypot(player.pos.x - spot[0], player.pos.z - spot[1]);
-        if (d < 6) {
-          rings[idx].material.color.set(0x3aff7a);
-          S.checkpoint++;
-          if (S.checkpoint >= rings.length) {
-            addCash(CFG.missionReward);
-            S.jobsDone++;
-            hint(`JOB DONE +$${CFG.missionReward} — Dalia sends her regards`);
-            audio.chime();
-            setM1();
-          } else {
-            hint(`Checkpoint ${S.checkpoint} of ${S.checkpointsTotal}`);
-            audio.blip();
-          }
-        }
+  } else if (S.mission === 'm3') {
+    // Nacho's rival car drives the checkpoint line.
+    const r = Missions.rival;
+    r.z += r.speed * dt;
+    if (r.z > 60) r.z = 60;
+    r.mesh.position.set(r.x, 0, r.z);
+    let done = 0;
+    for (const cp of Missions.checkpoints) {
+      if (!cp.done && distTo(cp.x, cp.z) < 6) {
+        cp.done = true;
+        cp.mesh.material.color.setHex(0x2ec44b);
+        addCash(100);
+        showHint('Checkpoint — +$100');
       }
+      if (cp.done) done++;
+    }
+    if (done === Missions.checkpoints.length) {
+      addCash(CFG.missionReward);
+      showHint('Getaway complete — +$' + CFG.missionReward, 3);
+      setMission('m1', 'Meet Dalia at the marina');
+      for (const cp of Missions.checkpoints) {
+        cp.done = false;
+        cp.mesh.material.color.setHex(0xffd23e);
+      }
+      Missions.tanker.hull = CFG.tankerHullMax;
+      S.hull = CFG.tankerHullMax;
+      S.hullWarned = false;
     }
   }
-
-  return { update, setM1, setM2, setM3, tanker, tankerState, rivals, rings, nacho, marker };
 }

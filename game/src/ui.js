@@ -1,143 +1,91 @@
-// OPAL COAST — HUD, minimap, start screen, pause and photo mode.
-// All DOM lives in index.html; this module only drives it.
+// OPAL COAST — HUD: speed, cash, wanted stars, mission objective, live minimap.
 
+import { CFG } from './config.js';
 import { S } from './state.js';
 
-function el(id) {
-  return document.getElementById(id);
+let els = {};
+let mapCtx = null;
+
+export function initUI() {
+  els = {
+    speed: document.getElementById('hud-speed'),
+    cash: document.getElementById('hud-cash'),
+    stars: document.getElementById('hud-stars'),
+    mission: document.getElementById('hud-mission'),
+    hull: document.getElementById('hud-hull'),
+    hint: document.getElementById('hud-hint'),
+    damage: document.getElementById('hud-damage'),
+    minimap: document.getElementById('minimap'),
+  };
+  if (els.minimap) mapCtx = els.minimap.getContext('2d');
 }
 
-export function createUI(ctx) {
-  const { audio, input } = ctx;
-  const hud = el('hud');
-  const speedEl = el('speed');
-  const cashEl = el('cash');
-  const starsEl = el('stars');
-  const objectiveEl = el('objectiveText');
-  const hintEl = el('hint');
-  const damageEl = el('damage');
-  const hullEl = el('hull');
-  const map = el('minimap');
-  const mctx = map ? map.getContext('2d') : null;
-  const startEl = el('start');
-  const pauseEl = el('pause');
+function starText() {
+  let s = '';
+  for (let i = 0; i < CFG.maxStars; i++) s += i < S.stars ? '★' : '☆';
+  return s;
+}
 
-  function forceStart() {
-    if (S.started) return;
-    S.started = true;
-    audio.ensure();
-    if (startEl) startEl.style.display = 'none';
+export function updateUI() {
+  if (!els.speed) return;
+  const kmh = Math.round(Math.abs(S.speed) * 3.6);
+  els.speed.textContent = S.onFoot ? 'ON FOOT' : kmh + ' km/h';
+  els.cash.textContent = '$' + S.cash;
+  els.stars.textContent = starText();
+  els.stars.style.color = S.stars >= 3 ? '#ff4040' : '#ffd23e';
+  els.mission.textContent = 'MISSION: ' + S.missionText;
+  els.hull.textContent = S.mission === 'm2' ? 'TANKER HULL ' + S.hull + '%' : '';
+  els.hull.style.color = S.hull < CFG.tankerHullWarnAt ? '#ff4040' : '#7fe7ff';
+  els.damage.textContent = 'DAMAGE ' + Math.round(S.damage) + '%';
+  els.hint.textContent = S.time < S.hintUntil ? S.hint : '';
+  drawMinimap();
+}
+
+function drawMinimap() {
+  if (!mapCtx) return;
+  const c = els.minimap;
+  const w = c.width;
+  const h = c.height;
+  mapCtx.fillStyle = 'rgba(10, 30, 40, 0.8)';
+  mapCtx.fillRect(0, 0, w, h);
+  const scale = w / CFG.mapRange;
+  const toMap = (x, z) => [w / 2 + (x - 20) * scale, h / 2 + z * scale];
+  // Sea.
+  mapCtx.fillStyle = '#1e6a8a';
+  mapCtx.fillRect(w / 2 + (CFG.beachX - 20) * scale, 0, w, h);
+  // Roads.
+  mapCtx.strokeStyle = '#888888';
+  mapCtx.lineWidth = 2;
+  const half = (CFG.grid * CFG.blockSize) / 2;
+  for (let i = 0; i <= CFG.grid; i++) {
+    const v = -half + i * CFG.blockSize;
+    const [x1, y1] = toMap(v, -half);
+    const [x2, y2] = toMap(v, half);
+    mapCtx.beginPath();
+    mapCtx.moveTo(x1, y1);
+    mapCtx.lineTo(x2, y2);
+    mapCtx.stroke();
+    const [x3, y3] = toMap(-half, v);
+    const [x4, y4] = toMap(half, v);
+    mapCtx.beginPath();
+    mapCtx.moveTo(x3, y3);
+    mapCtx.lineTo(x4, y4);
+    mapCtx.stroke();
   }
-
-  function start() {
-    forceStart();
-  }
-
-  if (startEl) {
-    startEl.addEventListener('click', start);
-  }
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Enter' && !S.started) start();
-  });
-
-  function drawMinimap() {
-    if (!mctx || !map) return;
-    const W = map.width;
-    const H = map.height;
-    const sx = (x) => (x + 170) * (W / 380);
-    const sy = (z) => (z + 170) * (H / 340);
-    mctx.fillStyle = 'rgba(10, 24, 38, 0.85)';
-    mctx.fillRect(0, 0, W, H);
-    // Sea on the east and south edges.
-    mctx.fillStyle = 'rgba(30, 111, 158, 0.9)';
-    mctx.fillRect(sx(160), 0, W - sx(160), H);
-    mctx.fillRect(0, sy(160), W, H - sy(160));
-    // Roads.
-    mctx.strokeStyle = 'rgba(200, 200, 210, 0.55)';
-    mctx.lineWidth = 2;
-    for (const c of [-120, -60, 0, 60, 120]) {
-      mctx.beginPath();
-      mctx.moveTo(sx(c), 0);
-      mctx.lineTo(sx(c), H);
-      mctx.stroke();
-      mctx.beginPath();
-      mctx.moveTo(0, sy(c));
-      mctx.lineTo(W, sy(c));
-      mctx.stroke();
-    }
-    const dot = (x, z, color, r) => {
-      mctx.fillStyle = color;
-      mctx.beginPath();
-      mctx.arc(sx(x), sy(z), r, 0, Math.PI * 2);
-      mctx.fill();
-    };
-    // Mission marker and tanker.
-    const { missions, police, player } = ctx;
-    if (missions && missions.marker) {
-      dot(missions.marker.position.x, missions.marker.position.z, '#ffc93c', 4);
-    }
-    if (missions && missions.tanker.visible) {
-      dot(missions.tanker.position.x, missions.tanker.position.z, '#ff8c2a', 3.5);
-    }
-    if (missions && missions.nacho.visible) {
-      dot(missions.nacho.position.x, missions.nacho.position.z, '#ffd94a', 3);
-    }
-    for (const it of police.interceptors) {
-      if (it.active) dot(it.pos.x, it.pos.z, '#ff2a2a', 3);
-    }
-    // The player, as a triangle pointing along the heading. On the map
-    // east is right and south is down, so forward (sin a, cos a) in
-    // (x, z) is the screen angle atan2(cos a, sin a).
-    const px = sx(player.pos.x);
-    const py = sy(player.pos.z);
-    const a = Math.atan2(Math.cos(player.heading), Math.sin(player.heading));
-    mctx.fillStyle = '#19b8a6';
-    mctx.beginPath();
-    mctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7);
-    mctx.lineTo(px + Math.cos(a + 2.5) * 5, py + Math.sin(a + 2.5) * 5);
-    mctx.lineTo(px + Math.cos(a - 2.5) * 5, py + Math.sin(a - 2.5) * 5);
-    mctx.closePath();
-    mctx.fill();
-  }
-
-  function update() {
-    // Toggles that live on key presses.
-    if (input.pressed('Escape') && S.started) {
-      S.paused = !S.paused;
-      if (pauseEl) pauseEl.style.display = S.paused ? 'flex' : 'none';
-    }
-    if (input.pressed('KeyP') && S.started) {
-      S.photo = !S.photo;
-    }
-    if (input.pressed('KeyM')) {
-      const muted = audio.toggleMute();
-      if (!S.photo) {
-        // Show the mute state briefly as a hint.
-        S.hint = muted ? 'Sound muted' : 'Sound on';
-        S.hintUntil = S.time + 1.2;
-      }
-    }
-
-    if (hud) hud.style.display = S.photo || !S.started ? 'none' : 'block';
-    if (speedEl) speedEl.textContent = `${S.speedKmh} km/h`;
-    if (cashEl) cashEl.textContent = `$${S.cash}`;
-    if (starsEl) starsEl.textContent = '★'.repeat(S.wanted) + '☆'.repeat(4 - S.wanted);
-    if (objectiveEl) objectiveEl.textContent = S.objective;
-    if (damageEl) damageEl.textContent = `DAMAGE ${S.damage}%`;
-    if (hullEl) {
-      hullEl.style.display = S.mission === 'm2' ? 'block' : 'none';
-      hullEl.textContent = `TANKER HULL ${Math.round(S.hull)}%`;
-    }
-    if (hintEl) {
-      if (S.time < S.hintUntil && S.hint) {
-        hintEl.style.display = 'block';
-        hintEl.textContent = S.hint;
-      } else {
-        hintEl.style.display = 'none';
-      }
-    }
-    drawMinimap();
-  }
-
-  return { update, forceStart };
+  // Player triangle, rotated to the heading.
+  const px = S.onFoot ? S.player.x : S.car.x;
+  const pz = S.onFoot ? S.player.z : S.car.z;
+  const [mx, my] = toMap(px, pz);
+  const hdg = S.onFoot ? S.player.heading : S.car.heading;
+  mapCtx.save();
+  mapCtx.translate(mx, my);
+  mapCtx.rotate(Math.atan2(Math.sin(hdg), Math.cos(hdg)));
+  mapCtx.fillStyle = '#2ec4b6';
+  mapCtx.beginPath();
+  mapCtx.moveTo(0, -6);
+  mapCtx.lineTo(4, 5);
+  mapCtx.lineTo(-4, 5);
+  mapCtx.closePath();
+  mapCtx.fill();
+  mapCtx.restore();
 }

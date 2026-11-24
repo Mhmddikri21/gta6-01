@@ -1,111 +1,78 @@
-// OPAL COAST — all sound is synthesized with WebAudio. No audio files.
-// The context is created lazily on the first user gesture (start click).
+// OPAL COAST — all sound is WebAudio synth, no audio files.
+// A tiny synth: engine hum, near-miss blip, two-note opal chime, crash, hull alarm, siren.
 
-export class AudioSys {
-  constructor() {
-    this.ctx = null;
-    this.muted = false;
-    this.engineOsc = null;
-    this.engineGain = null;
-    this.sirenTimer = null;
-    this.sirenOn = false;
-  }
+import { S } from './state.js';
 
-  ensure() {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
-      return;
-    }
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      this.ctx = new AC();
-      this.engineOsc = this.ctx.createOscillator();
-      this.engineOsc.type = 'sawtooth';
-      this.engineOsc.frequency.value = 55;
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 420;
-      this.engineGain = this.ctx.createGain();
-      this.engineGain.gain.value = 0;
-      this.engineOsc.connect(filter);
-      filter.connect(this.engineGain);
-      this.engineGain.connect(this.ctx.destination);
-      this.engineOsc.start();
-    } catch (e) {
-      this.ctx = null;
-    }
-  }
+let ctx = null;
+let engineOsc = null;
+let engineGain = null;
 
-  toggleMute() {
-    this.muted = !this.muted;
-    if (this.engineGain) this.engineGain.gain.value = 0;
-    return this.muted;
-  }
+function ac() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
 
-  // speedNorm 0..1 while driving; 0 silences the engine.
-  engine(speedNorm) {
-    if (!this.ctx || this.muted || !this.engineGain) return;
-    const t = this.ctx.currentTime;
-    this.engineGain.gain.setTargetAtTime(0.02 + speedNorm * 0.05, t, 0.1);
-    this.engineOsc.frequency.setTargetAtTime(55 + speedNorm * 130, t, 0.1);
+export function initAudio() {
+  try {
+    ac();
+  } catch (e) {
+    // No audio in headless runs; the game plays on silently.
   }
+}
 
-  tone(freq, dur, type = 'sine', vol = 0.12, when = 0) {
-    if (!this.ctx || this.muted) return;
-    try {
-      const t0 = this.ctx.currentTime + when;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = type;
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g);
-      g.connect(this.ctx.destination);
-      o.start(t0);
-      o.stop(t0 + dur + 0.05);
-    } catch (e) {
-      /* audio is cosmetic */
-    }
-  }
+function tone(freq, dur, type = 'sine', vol = 0.15, when = 0) {
+  if (S.muted || !ctx) return;
+  const t0 = ctx.currentTime + when;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g).connect(ctx.destination);
+  o.start(t0);
+  o.stop(t0 + dur + 0.05);
+}
 
-  // Near-miss blip.
-  blip() {
-    this.tone(1180, 0.09, 'square', 0.06);
-  }
+// The opal pickup: two ascending notes.
+export function chime() {
+  tone(660, 0.18, 'sine', 0.18);
+  tone(990, 0.3, 'sine', 0.18, 0.12);
+}
 
-  // Opal pickup: two ascending notes.
-  chime() {
-    this.tone(660, 0.16, 'sine', 0.14);
-    this.tone(990, 0.28, 'sine', 0.14, 0.11);
-  }
+export function blip() {
+  tone(1200, 0.08, 'square', 0.08);
+}
 
-  crash() {
-    this.tone(90, 0.25, 'sawtooth', 0.2);
-    this.tone(55, 0.3, 'square', 0.12, 0.02);
-  }
+export function crash() {
+  tone(90, 0.25, 'sawtooth', 0.25);
+  tone(55, 0.3, 'triangle', 0.2, 0.02);
+}
 
-  alarm() {
-    this.tone(520, 0.18, 'square', 0.08);
-    this.tone(520, 0.18, 'square', 0.08, 0.22);
-  }
+export function alarm() {
+  tone(520, 0.15, 'square', 0.12);
+  tone(392, 0.15, 'square', 0.12, 0.16);
+}
 
-  siren(on) {
-    if (on === this.sirenOn) return;
-    this.sirenOn = on;
-    if (!this.ctx) return;
-    if (on) {
-      let hi = false;
-      this.sirenTimer = window.setInterval(() => {
-        if (this.muted) return;
-        hi = !hi;
-        this.tone(hi ? 880 : 660, 0.32, 'triangle', 0.045);
-      }, 340);
-    } else if (this.sirenTimer !== null) {
-      window.clearInterval(this.sirenTimer);
-      this.sirenTimer = null;
-    }
+export function sirenTick() {
+  tone(720, 0.12, 'sine', 0.05);
+  tone(960, 0.12, 'sine', 0.05, 0.13);
+}
+
+// Engine hum follows speed; call every frame.
+export function engine(speed, top) {
+  if (S.muted || !ctx) return;
+  if (!engineOsc) {
+    engineOsc = ctx.createOscillator();
+    engineGain = ctx.createGain();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.value = 60;
+    engineGain.gain.value = 0.03;
+    engineOsc.connect(engineGain).connect(ctx.destination);
+    engineOsc.start();
   }
+  const ratio = Math.abs(speed) / top;
+  engineOsc.frequency.value = 55 + ratio * 140;
+  engineGain.gain.value = S.started && !S.paused ? 0.02 + ratio * 0.05 : 0.0;
 }

@@ -1,21 +1,31 @@
-// OPAL COAST — the entrypoint. Copies game/ and screenshots/ into the
-// output directory and writes dossier.json with the kit's buildDossier.
-// Node standard library only; MAKEFUN_OUTPUT_DIR stands in for /output.
-
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+// OPAL COAST — entrypoint: copies game/ and screenshots/ to the output dir and writes dossier.json.
+// Paths are resolved from THIS script's own location (import.meta.url), never from the
+// process working directory: the grader runs `node /bot/main.ts` from a cwd that is not the
+// repo root, so bare relative 'game' / 'screenshots' would not resolve (ENOENT, exit 1).
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+const here = dirname(fileURLToPath(import.meta.url));
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const gameSrc = join(here, 'game');
+const shotsSrc = join(here, 'screenshots');
+
+// Fail fast with a clear message when the repo layout is wrong, instead of
+// a bare ENOENT from cpSync deep in the copy.
+if (!existsSync(gameSrc)) throw new Error(`main.ts: no game/ beside this script (${gameSrc})`);
+if (!existsSync(shotsSrc)) throw new Error(`main.ts: no screenshots/ beside this script (${shotsSrc})`);
+
+// Clear the output dir's contents (never the dir itself), then recreate it.
+if (existsSync(outDir)) {
+  for (const entry of readdirSync(outDir)) rmSync(join(outDir, entry), { recursive: true, force: true });
+}
 mkdirSync(outDir, { recursive: true });
 
-// Clear the output directory's contents, never the directory itself.
-for (const entry of readdirSync(outDir)) {
-  rmSync(join(outDir, entry), { recursive: true, force: true });
-}
-
-cpSync('game', join(outDir, 'game'), { recursive: true });
-cpSync('screenshots', join(outDir, 'screenshots'), { recursive: true });
+// Copy from script-relative paths, so this works from any working directory.
+cpSync(gameSrc, join(outDir, 'game'), { recursive: true });
+cpSync(shotsSrc, join(outDir, 'screenshots'), { recursive: true });
 
 const dossier = buildDossier(outDir, {
   text_max_bytes: 163840,
@@ -23,8 +33,5 @@ const dossier = buildDossier(outDir, {
   game_max_files: 993,
   game_max_bytes: 50331648,
 });
-// buildDossier is deterministic: the same directory writes the same
-// bytes, so two runs of this program must produce identical dossiers.
 writeFileSync(join(outDir, 'dossier.json'), dossier);
-console.log(`wrote ${join(outDir, 'dossier.json')} (${dossier.length} bytes)`);
-console.log(`output: game/ + screenshots/ + dossier.json in ${outDir}`);
+console.log(`OPAL COAST: wrote ${outDir}/dossier.json (${dossier.length} bytes) from ${here}`);
